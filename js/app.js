@@ -151,5 +151,77 @@ function setupEventListeners() {
     document.getElementById('country-drawer').classList.add('hidden');
   });
 }
+// === 模組 #43：國家建立器互動邏輯 ===
+  const miniMap = document.getElementById('builder-mini-map');
+  const miniPin = document.getElementById('builder-pin');
+  const inputX = document.getElementById('b-x');
+  const inputY = document.getElementById('b-y');
 
+  // 點擊迷你地圖自動抓取座標
+  miniMap.addEventListener('click', (e) => {
+    const rect = miniMap.getBoundingClientRect();
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+    inputX.value = x;
+    inputY.value = y;
+    miniPin.style.left = `${x}%`;
+    miniPin.style.top = `${y}%`;
+  });
+
+  // 手動輸入座標時同步移動小地圖圖釘
+  [inputX, inputY].forEach(inp => {
+    inp.addEventListener('input', () => {
+      miniPin.style.left = `${inputX.value}%`;
+      miniPin.style.top = `${inputY.value}%`;
+    });
+  });
+
+  // 提交表單生成國家與 JSON
+  document.getElementById('country-builder-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = document.getElementById('b-name').value.trim();
+    const code = document.getElementById('b-code').value.trim().toUpperCase();
+
+    const newCountry = {
+      id: `${code.toLowerCase()}-${Date.now().toString().slice(-4)}`,
+      name: name,
+      officialName: document.getElementById('b-official').value.trim(),
+      code: code,
+      flag: document.getElementById('b-flag').value.trim(),
+      capital: document.getElementById('b-capital').value.trim(),
+      government: document.getElementById('b-gov').value.trim(),
+      leader: document.getElementById('b-leader').value.trim(),
+      population: Number(document.getElementById('b-pop').value),
+      gdp: Number(document.getElementById('b-gdp').value),
+      currency: document.getElementById('b-currency').value.trim(),
+      language: document.getElementById('b-lang').value.trim(),
+      religion: document.getElementById('b-religion').value.trim(),
+      tags: document.getElementById('b-tags').value.split(',').map(t => t.trim()).filter(Boolean),
+      mapCoords: {
+        x: Number(inputX.value),
+        y: Number(inputY.value)
+      },
+      description: document.getElementById('b-desc').value.trim(),
+      cities: document.getElementById('b-cities').value.split('、').map(c => c.trim()).filter(Boolean)
+    };
+
+    // 1. 輸出格式化 JSON
+    document.getElementById('json-output-box').textContent = JSON.stringify(newCountry, null, 2);
+
+    // 2. 即時加入目前網頁記憶體，讓玩家立刻去地圖和總覽看到效果
+    countriesData.push(newCountry);
+    renderDashboard();
+    renderMap('political');
+    renderCountriesGrid(countriesData);
+
+    alert(`🎉 「${newCountry.flag} ${newCountry.name}」已生成！\n你可以直接切換到「互動世界地圖」或「世界總覽」查看效果，並記得複製右側 JSON 存入 data/countries.json！`);
+  });
+
+  // 一鍵複製 JSON
+  document.getElementById('copy-json-btn').addEventListener('click', () => {
+    const text = document.getElementById('json-output-box').textContent;
+    if (text.startsWith('//')) return;
+    navigator.clipboard.writeText(text);
+    alert('✅ JSON 已複製到剪貼簿！請貼入 data/countries.json 中。');
+  });
 initWorld();

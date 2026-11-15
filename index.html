@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VIRTUAL WORLD | 虛擬世界資料庫</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- 左側導覽列 -->
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo">🌎</span>
+        <div>
+          <h1 id="world-title">VIRTUAL WORLD</h1>
+          <small id="world-year">紀元 2028 年</small>
+        </div>
+      </div>
+
+     <!-- 視圖 5：國家建立器 (模組 #43) -->
+      <section id="view-builder" class="view">
+        <h2>🏴 國家建立器 (Country Builder)</h2>
+        <div class="builder-layout">
+          <!-- 左側表單 -->
+          <form id="country-builder-form" class="panel builder-form">
+            <h3>1. 填寫國家基本設定</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label>國家簡稱 *</label>
+                <input type="text" id="b-name" placeholder="例如：赤紅帝國" required />
+              </div>
+              <div class="form-group">
+                <label>官方全稱 *</label>
+                <input type="text" id="b-official" placeholder="例如：神聖赤紅聯合帝國" required />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>國家代碼 (3碼) *</label>
+                <input type="text" id="b-code" maxlength="3" placeholder="例如：RED" style="text-transform:uppercase" required />
+              </div>
+              <div class="form-group">
+                <label>國旗 Emoji *</label>
+                <input type="text" id="b-flag" placeholder="例如：🔥" required />
+              </div>
+              <div class="form-group">
+                <label>首都名稱 *</label>
+                <input type="text" id="b-capital" placeholder="例如：烈焰城" required />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>政治體制</label>
+                <input type="text" id="b-gov" placeholder="例如：二元制君主立憲" required />
+              </div>
+              <div class="form-group">
+                <label>國家元首 / 玩家管理員</label>
+                <input type="text" id="b-leader" placeholder="例如：Alex (國家管理員)" required />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>總人口 (人)</label>
+                <input type="number" id="b-pop" value="25000000" min="1" required />
+              </div>
+              <div class="form-group">
+                <label>GDP (美元)</label>
+                <input type="number" id="b-gdp" value="450000000000" min="1" required />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>貨幣名稱與代碼</label>
+                <input type="text" id="b-currency" placeholder="例如：赤金幣 (RGD)" required />
+              </div>
+              <div class="form-group">
+                <label>官方語言</label>
+                <input type="text" id="b-lang" placeholder="例如：帝國語、通用星語" required />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>主要宗教信仰</label>
+              <input type="text" id="b-religion" placeholder="例如：太陽神教 (80%)、無宗教 (20%)" required />
+            </div>
+
+            <div class="form-group">
+              <label>主要城市 (請用頓號「、」分隔)</label>
+              <input type="text" id="b-cities" placeholder="例如：烈焰城 (首都)、黑鐵堡、熔岩港" required />
+            </div>
+
+            <div class="form-group">
+              <label>國家特色標籤 (請用逗號「,」分隔)</label>
+              <input type="text" id="b-tags" placeholder="例如：大陸國家, 重工業, 軍事強國" required />
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>地圖 X 座標 (0 ~ 100%)</label>
+                <input type="number" id="b-x" value="50" min="0" max="100" required />
+              </div>
+              <div class="form-group">
+                <label>地圖 Y 座標 (0 ~ 100%)</label>
+                <input type="number" id="b-y" value="30" min="0" max="100" required />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>國家簡介</label>
+              <textarea id="b-desc" rows="3" placeholder="描述這個國家的歷史背景、地理特色或文化..." required></textarea>
+            </div>
+
+            <button type="submit" class="btn-primary" style="width: 100%; padding: 12px; font-size: 1rem;">
+              ✨ 生成國家並加入即時預覽
+            </button>
+          </form>
+
+          <!-- 右側 JSON 輸出與地圖定位預覽 -->
+          <div class="panel builder-output">
+            <h3>2. 地圖座標點擊定位</h3>
+            <p class="hint" style="margin-bottom: 10px;">點擊下方小地圖，可直接設定該國家的 X / Y 座標：</p>
+            <div class="mini-map" id="builder-mini-map">
+              <div class="mini-pin" id="builder-pin" style="left: 50%; top: 30%;">📍 新國家位置</div>
+            </div>
+
+            <h3 style="margin-top: 20px;">3. 匯出 JSON 資料檔</h3>
+            <p class="hint" style="margin-bottom: 10px;">複製下方程式碼，貼入 <code>data/countries.json</code> 陣列中即可永久儲存：</p>
+            <pre id="json-output-box" class="code-box">// 填寫左側表單並點擊「生成國家」後，這裡會出現 JSON 程式碼...</pre>
+            <button id="copy-json-btn" class="btn-secondary" style="margin-top: 10px;">📋 一鍵複製 JSON</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="user-badge">
+        <span>👑 世界管理員：<strong id="world-admin">載入中...</strong></span>
+      </div>
+    </aside>
+
+    <!-- 右側主內容區 -->
+    <main class="main-content">
+      <!-- 頂部搜尋與探索列 (模組 #36, #37) -->
+      <header class="topbar">
+        <input type="text" id="search-input" placeholder="🔎 搜尋國家、首都、語言、標籤..." />
+        <button id="random-country-btn" class="btn-primary">🧭 隨機探索國家</button>
+      </header>
+
+      <!-- 視圖 1：世界總覽 Dashboard (模組 #50, #31) -->
+      <section id="view-dashboard" class="view active">
+        <h2>🌎 世界即時總覽</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">主權國家數量</span>
+            <strong class="stat-value" id="stat-countries">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">世界總人口</span>
+            <strong class="stat-value" id="stat-pop">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">世界總 GDP</span>
+            <strong class="stat-value" id="stat-gdp">$0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">當前世界紀元</span>
+            <strong class="stat-value" id="stat-era">2028</strong>
+          </div>
+        </div>
+
+        <div class="dashboard-split">
+          <div class="panel">
+            <h3>🏆 國家經濟排名 (GDP)</h3>
+            <div id="gdp-ranking-list" class="ranking-list"></div>
+          </div>
+          <div class="panel">
+            <h3>📜 近期世界大事紀</h3>
+            <ul id="dashboard-timeline" class="timeline-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 視圖 2：互動世界地圖 (模組 #1, #42, #52) -->
+      <section id="view-map" class="view">
+        <div class="view-header">
+          <h2>🗺️ 互動世界地圖</h2>
+          <div class="layer-controls">
+            <label>圖層切換：</label>
+            <button class="layer-btn active" data-layer="political">政區圖層</button>
+            <button class="layer-btn" data-layer="population">人口密度</button>
+            <button class="layer-btn" data-layer="economy">經濟熱度</button>
+          </div>
+        </div>
+        <div class="map-canvas" id="world-map-canvas">
+          <!-- 這裡可替換為你們繪製的星形大陸 SVG 或地圖底圖 -->
+          <div class="map-grid-bg"></div>
+          <div id="map-pins-container"></div>
+        </div>
+        <p class="hint">💡 點擊地圖上的國家標記，即可開啟該國家的完整 Wiki 檔案。</p>
+      </section>
+
+      <!-- 視圖 3：國家資料庫 (模組 #35, #41) -->
+      <section id="view-countries" class="view">
+        <h2>🏳️ 世界國家名錄</h2>
+        <div id="countries-grid" class="countries-grid"></div>
+      </section>
+
+      <!-- 視圖 4：世界時間線 (模組 #16, #53) -->
+      <section id="view-timeline" class="view">
+        <h2>📜 世界歷史時間軸</h2>
+        <div class="panel">
+          <ul id="full-timeline" class="timeline-list"></ul>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 國家 Wiki 詳情側邊抽屜 (模組 #35) -->
+  <div id="country-drawer" class="drawer hidden">
+    <div class="drawer-content">
+      <button id="close-drawer" class="close-btn">✕ 關閉</button>
+      <div id="drawer-body"></div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
