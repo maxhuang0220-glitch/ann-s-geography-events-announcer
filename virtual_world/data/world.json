@@ -1,0 +1,12 @@
+{
+  "worldName": "Aethelgard 虛擬世界",
+  "currentYear": 2028,
+  "administrator": "蔡幸恩",
+  "totalPopulation": 148500000,
+  "totalGDP": 3420000000000,
+  "timeline": [
+    { "year": 2026, "event": "蔡幸恩建立世界，完成大陸板塊與土地分配" },
+    { "year": 2027, "event": "各國陸續制定憲法、建立首都並發行貨幣" },
+    { "year": 2028, "event": "星辰聯邦與新月王國正式建交，首條跨國鐵路通車" }
+  ]
+}

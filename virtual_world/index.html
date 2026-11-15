@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VIRTUAL WORLD | 虛擬世界資料庫</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- 左側導覽列 -->
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo">🌎</span>
+        <div>
+          <h1 id="world-title">VIRTUAL WORLD</h1>
+          <small id="world-year">紀元 2028 年</small>
+        </div>
+      </div>
+
+      // === 模組 #43：國家建立器互動邏輯 ===
+  const miniMap = document.getElementById('builder-mini-map');
+  const miniPin = document.getElementById('builder-pin');
+  const inputX = document.getElementById('b-x');
+  const inputY = document.getElementById('b-y');
+
+  // 點擊迷你地圖自動抓取座標
+  miniMap.addEventListener('click', (e) => {
+    const rect = miniMap.getBoundingClientRect();
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
+    inputX.value = x;
+    inputY.value = y;
+    miniPin.style.left = `${x}%`;
+    miniPin.style.top = `${y}%`;
+  });
+
+  // 手動輸入座標時同步移動小地圖圖釘
+  [inputX, inputY].forEach(inp => {
+    inp.addEventListener('input', () => {
+      miniPin.style.left = `${inputX.value}%`;
+      miniPin.style.top = `${inputY.value}%`;
+    });
+  });
+
+  // 提交表單生成國家與 JSON
+  document.getElementById('country-builder-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = document.getElementById('b-name').value.trim();
+    const code = document.getElementById('b-code').value.trim().toUpperCase();
+
+    const newCountry = {
+      id: `${code.toLowerCase()}-${Date.now().toString().slice(-4)}`,
+      name: name,
+      officialName: document.getElementById('b-official').value.trim(),
+      code: code,
+      flag: document.getElementById('b-flag').value.trim(),
+      capital: document.getElementById('b-capital').value.trim(),
+      government: document.getElementById('b-gov').value.trim(),
+      leader: document.getElementById('b-leader').value.trim(),
+      population: Number(document.getElementById('b-pop').value),
+      gdp: Number(document.getElementById('b-gdp').value),
+      currency: document.getElementById('b-currency').value.trim(),
+      language: document.getElementById('b-lang').value.trim(),
+      religion: document.getElementById('b-religion').value.trim(),
+      tags: document.getElementById('b-tags').value.split(',').map(t => t.trim()).filter(Boolean),
+      mapCoords: {
+        x: Number(inputX.value),
+        y: Number(inputY.value)
+      },
+      description: document.getElementById('b-desc').value.trim(),
+      cities: document.getElementById('b-cities').value.split('、').map(c => c.trim()).filter(Boolean)
+    };
+
+    // 1. 輸出格式化 JSON
+    document.getElementById('json-output-box').textContent = JSON.stringify(newCountry, null, 2);
+
+    // 2. 即時加入目前網頁記憶體，讓玩家立刻去地圖和總覽看到效果
+    countriesData.push(newCountry);
+    renderDashboard();
+    renderMap('political');
+    renderCountriesGrid(countriesData);
+
+    alert(`🎉 「${newCountry.flag} ${newCountry.name}」已生成！\n你可以直接切換到「互動世界地圖」或「世界總覽」查看效果，並記得複製右側 JSON 存入 data/countries.json！`);
+  });
+
+  // 一鍵複製 JSON
+  document.getElementById('copy-json-btn').addEventListener('click', () => {
+    const text = document.getElementById('json-output-box').textContent;
+    if (text.startsWith('//')) return;
+    navigator.clipboard.writeText(text);
+    alert('✅ JSON 已複製到剪貼簿！請貼入 data/countries.json 中。');
+  });
+
+      <div class="user-badge">
+        <span>👑 世界管理員：<strong id="world-admin">載入中...</strong></span>
+      </div>
+    </aside>
+
+    <!-- 右側主內容區 -->
+    <main class="main-content">
+      <!-- 頂部搜尋與探索列 (模組 #36, #37) -->
+      <header class="topbar">
+        <input type="text" id="search-input" placeholder="🔎 搜尋國家、首都、語言、標籤..." />
+        <button id="random-country-btn" class="btn-primary">🧭 隨機探索國家</button>
+      </header>
+
+      <!-- 視圖 1：世界總覽 Dashboard (模組 #50, #31) -->
+      <section id="view-dashboard" class="view active">
+        <h2>🌎 世界即時總覽</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">主權國家數量</span>
+            <strong class="stat-value" id="stat-countries">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">世界總人口</span>
+            <strong class="stat-value" id="stat-pop">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">世界總 GDP</span>
+            <strong class="stat-value" id="stat-gdp">$0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">當前世界紀元</span>
+            <strong class="stat-value" id="stat-era">2028</strong>
+          </div>
+        </div>
+
+        <div class="dashboard-split">
+          <div class="panel">
+            <h3>🏆 國家經濟排名 (GDP)</h3>
+            <div id="gdp-ranking-list" class="ranking-list"></div>
+          </div>
+          <div class="panel">
+            <h3>📜 近期世界大事紀</h3>
+            <ul id="dashboard-timeline" class="timeline-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- 視圖 2：互動世界地圖 (模組 #1, #42, #52) -->
+      <section id="view-map" class="view">
+        <div class="view-header">
+          <h2>🗺️ 互動世界地圖</h2>
+          <div class="layer-controls">
+            <label>圖層切換：</label>
+            <button class="layer-btn active" data-layer="political">政區圖層</button>
+            <button class="layer-btn" data-layer="population">人口密度</button>
+            <button class="layer-btn" data-layer="economy">經濟熱度</button>
+          </div>
+        </div>
+        <div class="map-canvas" id="world-map-canvas">
+          <!-- 這裡可替換為你們繪製的星形大陸 SVG 或地圖底圖 -->
+          <div class="map-grid-bg"></div>
+          <div id="map-pins-container"></div>
+        </div>
+        <p class="hint">💡 點擊地圖上的國家標記，即可開啟該國家的完整 Wiki 檔案。</p>
+      </section>
+
+      <!-- 視圖 3：國家資料庫 (模組 #35, #41) -->
+      <section id="view-countries" class="view">
+        <h2>🏳️ 世界國家名錄</h2>
+        <div id="countries-grid" class="countries-grid"></div>
+      </section>
+
+      <!-- 視圖 4：世界時間線 (模組 #16, #53) -->
+      <section id="view-timeline" class="view">
+        <h2>📜 世界歷史時間軸</h2>
+        <div class="panel">
+          <ul id="full-timeline" class="timeline-list"></ul>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 國家 Wiki 詳情側邊抽屜 (模組 #35) -->
+  <div id="country-drawer" class="drawer hidden">
+    <div class="drawer-content">
+      <button id="close-drawer" class="close-btn">✕ 關閉</button>
+      <div id="drawer-body"></div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
