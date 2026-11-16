@@ -8,10 +8,12 @@ let diplomacyData = { relations: [], organizations: [] };
 let currentUser = null; // { username, role: 'ADMIN' | 'PLAYER' }
 let registeredPlayers = []; // [{ username, password, banned: false }]
 
-// Flow Time 與地圖繪圖狀態
-let simDate = { year: 2028, month: 1, day: 1 };
+// Flow Time 與地圖繪圖狀態（現實 30 分鐘 = 1,800,000 毫秒 = 虛擬 1 天）
+const MS_PER_SIM_DAY = 30 * 60 * 1000;
+let simDate = { year: 2028, month: 1, day: 1, dayProgress: 0 };
 let flowSpeed = 1;
 let flowTimer = null;
+let lastTickTime = Date.now();
 let currentMapLayer = 'political';
 let isDrawMode = false;
 let tempPolygonPoints = [];
@@ -99,24 +101,47 @@ function switchView(viewName) {
 // ==========================================
 function startFlowTimeLoop() {
   if (flowTimer) clearInterval(flowTimer);
+  lastTickTime = Date.now();
+
   flowTimer = setInterval(() => {
+    const now = Date.now();
+    const deltaMs = now - lastTickTime;
+    lastTickTime = now;
+
     if (flowSpeed === 0) return;
 
-    simDate.day += flowSpeed;
-    while (simDate.day > 30) {
-      simDate.day -= 30;
-      simDate.month += 1;
-      onNewMonthTick();
-    }
-    while (simDate.month > 12) {
-      simDate.month -= 12;
-      simDate.year += 1;
-      onNewYearTick();
+    simDate.dayProgress = (simDate.dayProgress || 0) + (deltaMs * flowSpeed) / MS_PER_SIM_DAY;
+
+    let dayChanged = false;
+    while (simDate.dayProgress >= 1) {
+      simDate.dayProgress -= 1;
+      simDate.day += 1;
+      dayChanged = true;
+
+      while (simDate.day > 30) {
+        simDate.day -= 30;
+        simDate.month += 1;
+        onNewMonthTick();
+      }
+      while (simDate.month > 12) {
+        simDate.month -= 12;
+        simDate.year += 1;
+        onNewYearTick();
+      }
     }
 
     updateClockUI();
-    localStorage.setItem(KEYS.DATE, JSON.stringify(simDate));
-  }, 1500);
+    if (dayChanged) {
+      localStorage.setItem(KEYS.DATE, JSON.stringify(simDate));
+    }
+  }, 1000);
+}
+
+function updateClockUI() {
+  const m = String(simDate.month).padStart(2, '0');
+  const d = String(simDate.day).padStart(2, '0');
+  const pct = Math.floor((simDate.dayProgress || 0) * 100);
+  document.getElementById('world-clock-display').textContent = `${simDate.year}年 ${m}月 ${d}日 (${pct}%)`;
 }
 
 function updateClockUI() {
