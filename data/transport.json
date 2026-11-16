@@ -1,0 +1,20 @@
+[
+  {
+    "id": "tr-001",
+    "type": "高速鐵路",
+    "name": "星月跨海新幹線",
+    "fromCountryId": "star-federation",
+    "toCountryId": "crescent-kingdom",
+    "hubs": "星輝市 ⇄ 月影城",
+    "capacity": "每日 12 萬人次"
+  },
+  {
+    "id": "tr-002",
+    "type": "海運航線",
+    "name": "翡翠—新月糧食貿易航線",
+    "fromCountryId": "emerald-republic",
+    "toCountryId": "crescent-kingdom",
+    "hubs": "綠洲鎮 ⇄ 潮汐港",
+    "capacity": "年運量 4,500 萬噸"
+  }
+]
