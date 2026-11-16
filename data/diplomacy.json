@@ -1,0 +1,27 @@
+{
+  "relations": [
+    {
+      "id": "rel-001",
+      "countryA": "star-federation",
+      "countryB": "crescent-kingdom",
+      "status": "正式建交 & 自由貿易",
+      "note": "互設大使館並簽署跨海鐵路關稅減免協定"
+    },
+    {
+      "id": "rel-002",
+      "countryA": "emerald-republic",
+      "countryB": "star-federation",
+      "status": "環保戰略同盟",
+      "note": "共同開發清潔能源與衛星氣候監測網"
+    }
+  ],
+  "organizations": [
+    {
+      "id": "org-001",
+      "name": "🌍 世界聯合議會 (WUC)",
+      "hq": "星輝市",
+      "members": ["星辰聯邦", "新月王國", "翡翠共和國"],
+      "purpose": "協調跨國地理防災、航線安全與國際法規"
+    }
+  ]
+}
