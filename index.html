@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VIRTUAL WORLD | 虛擬世界資料庫</title>
+  <title>VIRTUAL WORLD | 虛擬世界與地理事件通播系統</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -18,13 +18,193 @@
         </div>
       </div>
 
-     <!-- 視圖 5：國家建立器 (模組 #43) -->
-      <section id="view-builder" class="view">
-        <h2>🏴 國家建立器 (Country Builder)</h2>
+      <nav class="nav-menu">
+        <button class="nav-btn active" data-view="dashboard">🌎 世界總覽 Dashboard</button>
+        <button class="nav-btn" data-view="events">📰 地理事件通播系統</button>
+        <button class="nav-btn" data-view="map">🗺️ 互動世界地圖</button>
+        <button class="nav-btn" data-view="countries">🏳️ 國家百科 & 編輯</button>
+        <button class="nav-btn" data-view="builder">🏴 創建 / 編輯國家</button>
+        <button class="nav-btn" data-view="timeline">📜 世界歷史時間線</button>
+        <div class="nav-divider">擴充模組 (待解鎖)</div>
+        <button class="nav-btn disabled">🚆 交通與航線系統</button>
+        <button class="nav-btn disabled">🕊️ 外交與國際組織</button>
+        <button class="nav-btn disabled">⚙️ 世界規則模擬器</button>
+      </nav>
+
+      <div class="user-badge">
+        <div>👑 世界管理員：<strong id="world-admin">載入中...</strong></div>
+        <button id="reset-local-btn" class="btn-tiny" title="清除瀏覽器暫存，恢復為 GitHub 原始資料">🔄 重置為雲端原始資料</button>
+      </div>
+    </aside>
+
+    <!-- 右側主內容區 -->
+    <main class="main-content">
+      <!-- 頂部地理事件緊急通播條 -->
+      <div class="broadcast-banner" id="latest-broadcast-banner" onclick="switchView('events')">
+        <span class="badge-live">📡 最新地理通播</span>
+        <span id="banner-event-text">載入最新事件中...</span>
+        <small style="margin-left:auto; color: var(--accent);">點擊查看全部 / 發布通播 ➔</small>
+      </div>
+
+      <!-- 頂部搜尋與探索列 -->
+      <header class="topbar">
+        <input type="text" id="search-input" placeholder="🔎 搜尋國家、首都、語言、標籤..." />
+        <button id="random-country-btn" class="btn-primary">🧭 隨機探索國家</button>
+      </header>
+
+      <!-- 視圖 1：世界總覽 Dashboard -->
+      <section id="view-dashboard" class="view active">
+        <h2>🌎 世界即時總覽</h2>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-label">主權國家數量</span>
+            <strong class="stat-value" id="stat-countries">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">世界總人口</span>
+            <strong class="stat-value" id="stat-pop">0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">世界總 GDP</span>
+            <strong class="stat-value" id="stat-gdp">$0</strong>
+          </div>
+          <div class="stat-card">
+            <span class="stat-label">已發布事件通播</span>
+            <strong class="stat-value" id="stat-events">0 則</strong>
+          </div>
+        </div>
+
+        <div class="dashboard-split">
+          <div class="panel">
+            <h3>🏆 國家經濟排名 (GDP)</h3>
+            <div id="gdp-ranking-list" class="ranking-list"></div>
+          </div>
+          <div class="panel">
+            <h3>📡 最新地理與世界事件</h3>
+            <div id="dashboard-events-list" class="event-mini-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 視圖 2：地理事件通播系統 (新增功能) -->
+      <section id="view-events" class="view">
+        <h2>📰 地理事件通播系統 (Geography & World Events)</h2>
         <div class="builder-layout">
-          <!-- 左側表單 -->
+          <!-- 左側：所有事件通播列表 -->
+          <div class="panel">
+            <div class="view-header">
+              <h3>📡 世界事件即時播報牆</h3>
+              <select id="event-filter-type" class="select-input">
+                <option value="ALL">全部事件類型</option>
+                <option value="地理變動">🌋 地理變動 / 板塊</option>
+                <option value="自然災害">🌪️ 自然災害 / 氣候</option>
+                <option value="國家動態">🏴 國家成立 / 領土</option>
+                <option value="外交條約">🕊️ 外交 / 戰爭 / 條約</option>
+                <option value="交通建設">🚆 交通 / 基礎建設</option>
+              </select>
+            </div>
+            <div id="events-feed-list" class="events-feed"></div>
+          </div>
+
+          <!-- 右側：發布新事件通播 -->
+          <div class="panel">
+            <h3>📢 發布新地理 / 世界事件</h3>
+            <form id="event-publish-form" class="builder-form">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>發生紀元 (年份) *</label>
+                  <input type="number" id="e-year" value="2028" required />
+                </div>
+                <div class="form-group">
+                  <label>事件類型 *</label>
+                  <select id="e-type" class="select-input">
+                    <option value="地理變動">🌋 地理變動 / 板塊</option>
+                    <option value="自然災害">🌪️ 自然災害 / 氣候</option>
+                    <option value="國家動態">🏴 國家成立 / 領土</option>
+                    <option value="外交條約">🕊️ 外交 / 戰爭 / 條約</option>
+                    <option value="交通建設">🚆 交通 / 基礎建設</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label>影響等級 *</label>
+                  <select id="e-severity" class="select-input">
+                    <option value="一般">🟢 一般通播</option>
+                    <option value="重大">🟡 重大事件</option>
+                    <option value="緊急">🔴 緊急警報</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>發生地點 / 涉及國家 *</label>
+                  <input type="text" id="e-region" placeholder="例如：星形大陸北境 / 新月王國" required />
+                </div>
+              </div>
+
+              <div class="form-group">
+                <label>事件標題 *</label>
+                <input type="text" id="e-title" placeholder="例如：中央山脈發生 7.2 級強震" required />
+              </div>
+
+              <div class="form-group">
+                <label>事件詳細通播內容 *</label>
+                <textarea id="e-content" rows="4" placeholder="描述事件經過、地理影響或各國反應..." required></textarea>
+              </div>
+
+              <button type="submit" class="btn-primary" style="padding: 12px;">📡 立即全網通播此事件</button>
+            </form>
+
+            <h3 style="margin-top: 24px;">💾 同步事件至 GitHub (`data/events.json`)</h3>
+            <p class="hint">若要讓所有朋友重新整理後都看到新事件，請複製下方 JSON 貼入 <code>data/events.json</code>：</p>
+            <pre id="events-json-box" class="code-box" style="max-height: 150px;"></pre>
+            <button id="copy-events-json-btn" class="btn-secondary" style="margin-top: 8px;">📋 複製完整 events.json</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 視圖 3：互動世界地圖 -->
+      <section id="view-map" class="view">
+        <div class="view-header">
+          <h2>🗺️ 互動世界地圖</h2>
+          <div class="layer-controls">
+            <label>圖層切換：</label>
+            <button class="layer-btn active" data-layer="political">政區圖層</button>
+            <button class="layer-btn" data-layer="population">人口密度</button>
+            <button class="layer-btn" data-layer="economy">經濟熱度</button>
+          </div>
+        </div>
+        <div class="map-canvas" id="world-map-canvas">
+          <div class="map-grid-bg"></div>
+          <div id="map-pins-container"></div>
+        </div>
+        <p class="hint">💡 點擊地圖上的國家標記，可查看 Wiki 檔案或直接編輯該國家。</p>
+      </section>
+
+      <!-- 視圖 4：國家資料庫 -->
+      <section id="view-countries" class="view">
+        <div class="view-header">
+          <h2>🏳️ 世界國家名錄</h2>
+          <button class="btn-primary" onclick="openBuilderForNew()">➕ 創建我的新國家</button>
+        </div>
+        <div id="countries-grid" class="countries-grid"></div>
+      </section>
+
+      <!-- 視圖 5：創建 / 編輯國家工作站 (升級版) -->
+      <section id="view-builder" class="view">
+        <div class="view-header">
+          <h2 id="builder-mode-title">🏴 創建新國家</h2>
+          <div style="display:flex; gap:10px; align-items:center;">
+            <label style="color:var(--text-muted); font-size:0.9rem;">快速載入現有國家編輯：</label>
+            <select id="edit-country-selector" class="select-input">
+              <option value="NEW">➕ 建立全新國家...</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="builder-layout">
           <form id="country-builder-form" class="panel builder-form">
-            <h3>1. 填寫國家基本設定</h3>
+            <input type="hidden" id="b-id" value="" />
             <div class="form-row">
               <div class="form-group">
                 <label>國家簡稱 *</label>
@@ -115,100 +295,32 @@
               <textarea id="b-desc" rows="3" placeholder="描述這個國家的歷史背景、地理特色或文化..." required></textarea>
             </div>
 
-            <button type="submit" class="btn-primary" style="width: 100%; padding: 12px; font-size: 1rem;">
-              ✨ 生成國家並加入即時預覽
-            </button>
+            <div class="form-row">
+              <button type="submit" id="builder-submit-btn" class="btn-primary" style="flex: 2; padding: 12px; font-size: 1rem;">
+                ✨ 儲存並發布國家
+              </button>
+              <button type="button" id="delete-country-btn" class="btn-danger hidden" style="flex: 1;">
+                🗑️ 刪除此國
+              </button>
+            </div>
           </form>
 
-          <!-- 右側 JSON 輸出與地圖定位預覽 -->
           <div class="panel builder-output">
-            <h3>2. 地圖座標點擊定位</h3>
-            <p class="hint" style="margin-bottom: 10px;">點擊下方小地圖，可直接設定該國家的 X / Y 座標：</p>
+            <h3>📍 地圖座標點擊定位</h3>
+            <p class="hint" style="margin-bottom: 10px;">點擊下方小地圖設定該國家的領土座標：</p>
             <div class="mini-map" id="builder-mini-map">
-              <div class="mini-pin" id="builder-pin" style="left: 50%; top: 30%;">📍 新國家位置</div>
+              <div class="mini-pin" id="builder-pin" style="left: 50%; top: 30%;">📍 國家位置</div>
             </div>
 
-            <h3 style="margin-top: 20px;">3. 匯出 JSON 資料檔</h3>
-            <p class="hint" style="margin-bottom: 10px;">複製下方程式碼，貼入 <code>data/countries.json</code> 陣列中即可永久儲存：</p>
-            <pre id="json-output-box" class="code-box">// 填寫左側表單並點擊「生成國家」後，這裡會出現 JSON 程式碼...</pre>
-            <button id="copy-json-btn" class="btn-secondary" style="margin-top: 10px;">📋 一鍵複製 JSON</button>
+            <h3 style="margin-top: 20px;">💾 同步至 GitHub (`data/countries.json`)</h3>
+            <p class="hint" style="margin-bottom: 10px;">這裡會自動輸出完整的 <code>countries.json</code>，複製貼上覆蓋原檔即可全網同步：</p>
+            <pre id="json-output-box" class="code-box"></pre>
+            <button id="copy-json-btn" class="btn-secondary" style="margin-top: 10px;">📋 一鍵複製完整 countries.json</button>
           </div>
         </div>
       </section>
 
-      <div class="user-badge">
-        <span>👑 世界管理員：<strong id="world-admin">載入中...</strong></span>
-      </div>
-    </aside>
-
-    <!-- 右側主內容區 -->
-    <main class="main-content">
-      <!-- 頂部搜尋與探索列 (模組 #36, #37) -->
-      <header class="topbar">
-        <input type="text" id="search-input" placeholder="🔎 搜尋國家、首都、語言、標籤..." />
-        <button id="random-country-btn" class="btn-primary">🧭 隨機探索國家</button>
-      </header>
-
-      <!-- 視圖 1：世界總覽 Dashboard (模組 #50, #31) -->
-      <section id="view-dashboard" class="view active">
-        <h2>🌎 世界即時總覽</h2>
-        <div class="stats-grid">
-          <div class="stat-card">
-            <span class="stat-label">主權國家數量</span>
-            <strong class="stat-value" id="stat-countries">0</strong>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">世界總人口</span>
-            <strong class="stat-value" id="stat-pop">0</strong>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">世界總 GDP</span>
-            <strong class="stat-value" id="stat-gdp">$0</strong>
-          </div>
-          <div class="stat-card">
-            <span class="stat-label">當前世界紀元</span>
-            <strong class="stat-value" id="stat-era">2028</strong>
-          </div>
-        </div>
-
-        <div class="dashboard-split">
-          <div class="panel">
-            <h3>🏆 國家經濟排名 (GDP)</h3>
-            <div id="gdp-ranking-list" class="ranking-list"></div>
-          </div>
-          <div class="panel">
-            <h3>📜 近期世界大事紀</h3>
-            <ul id="dashboard-timeline" class="timeline-list"></ul>
-          </div>
-        </div>
-      </section>
-
-      <!-- 視圖 2：互動世界地圖 (模組 #1, #42, #52) -->
-      <section id="view-map" class="view">
-        <div class="view-header">
-          <h2>🗺️ 互動世界地圖</h2>
-          <div class="layer-controls">
-            <label>圖層切換：</label>
-            <button class="layer-btn active" data-layer="political">政區圖層</button>
-            <button class="layer-btn" data-layer="population">人口密度</button>
-            <button class="layer-btn" data-layer="economy">經濟熱度</button>
-          </div>
-        </div>
-        <div class="map-canvas" id="world-map-canvas">
-          <!-- 這裡可替換為你們繪製的星形大陸 SVG 或地圖底圖 -->
-          <div class="map-grid-bg"></div>
-          <div id="map-pins-container"></div>
-        </div>
-        <p class="hint">💡 點擊地圖上的國家標記，即可開啟該國家的完整 Wiki 檔案。</p>
-      </section>
-
-      <!-- 視圖 3：國家資料庫 (模組 #35, #41) -->
-      <section id="view-countries" class="view">
-        <h2>🏳️ 世界國家名錄</h2>
-        <div id="countries-grid" class="countries-grid"></div>
-      </section>
-
-      <!-- 視圖 4：世界時間線 (模組 #16, #53) -->
+      <!-- 視圖 6：世界時間線 -->
       <section id="view-timeline" class="view">
         <h2>📜 世界歷史時間軸</h2>
         <div class="panel">
@@ -218,10 +330,13 @@
     </main>
   </div>
 
-  <!-- 國家 Wiki 詳情側邊抽屜 (模組 #35) -->
+  <!-- 國家 Wiki 詳情側邊抽屜 -->
   <div id="country-drawer" class="drawer hidden">
     <div class="drawer-content">
-      <button id="close-drawer" class="close-btn">✕ 關閉</button>
+      <div style="display:flex; justify-content:space-between; margin-bottom:20px;">
+        <button id="close-drawer" class="close-btn" style="margin:0;">✕ 關閉</button>
+        <button id="drawer-edit-btn" class="btn-primary" style="padding: 8px 14px;">✏️ 編輯此國家資料</button>
+      </div>
       <div id="drawer-body"></div>
     </div>
   </div>
