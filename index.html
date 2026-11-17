@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VIRTUAL WORLD | 虛擬世界、全球股市與聯合國議會系統</title>
+  <title>VIRTUAL WORLD | 虛擬世界聯邦與全球交易所</title>
   <link rel="stylesheet" href="css/style.css" />
 </head>
 <body>
@@ -18,10 +18,10 @@
         </div>
       </div>
 
-      <!-- Flow Time 時間控制面板 -->
+      <!-- Flow Time 時間控制面板 (30m = 1d) -->
       <div class="flow-time-box">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <span style="font-size:0.75rem; color:var(--text-muted);">⏳ 流速 (30分=1天)</span>
+          <span style="font-size:0.74rem; color:var(--text-muted);">⏳ 流速 (30分=1天)</span>
           <span id="flow-status-badge" class="badge-flow">1x (30m/日)</span>
         </div>
         <div class="flow-controls">
@@ -34,12 +34,12 @@
 
       <nav class="nav-menu">
         <button class="nav-btn active" data-view="dashboard">🌎 世界總覽 Dashboard</button>
-        <button class="nav-btn" data-view="news">📺 自動新聞台 & 地理通播</button>
+        <button class="nav-btn" data-view="events">📺 24H 自動新聞台 & 通播</button>
         <button class="nav-btn" data-view="stocks">📈 全球股票交易所</button>
-        <button class="nav-btn" data-view="un">🏛️ 聯合國大會 (聊天室/投票)</button>
+        <button class="nav-btn" data-view="un">🏛️ 聯合國大會 (議事聊天室)</button>
         <button class="nav-btn" data-view="map">🗺️ 經緯度地圖 & 領土手繪</button>
-        <button class="nav-btn" data-view="countries">🏳️ 國家百科 & 專屬網站</button>
-        <button class="nav-btn" data-view="builder">🏴 創建 / 設計國家網站</button>
+        <button class="nav-btn" data-view="countries">🏳️ 國家百科 & 專屬官網</button>
+        <button class="nav-btn" data-view="builder">🎨 創建 / 設計國家與官網</button>
         <button class="nav-btn" data-view="transport">🚆 交通與航線系統</button>
         <button class="nav-btn" data-view="diplomacy">🕊️ 外交與國際組織</button>
         <button class="nav-btn" data-view="timeline">📜 世界歷史時間線</button>
@@ -50,8 +50,7 @@
 
       <!-- 當前登入帳號狀態 -->
       <div class="user-badge">
-        <div id="current-user-info">👤 未登入 (訪客模式)</div>
-        <div id="user-cash-display" style="font-size:0.78rem; color:var(--success); display:none;">💰 帳戶資金：$100,000</div>
+        <div id="current-user-info">👤 訪客模式 (登入後可交易/建國)</div>
         <div style="display:flex; gap:6px;">
           <button class="btn-tiny" style="flex:1;" onclick="switchView('accounts')">🔑 登入 / 切換帳號</button>
           <button id="reset-local-btn" class="btn-tiny" title="重置本地暫存">🔄</button>
@@ -61,16 +60,16 @@
 
     <!-- 右側主內容區 -->
     <main class="main-content">
-      <!-- 頂部 24H 自動新聞台與股市快訊跑馬燈 -->
-      <div class="broadcast-banner" onclick="switchView('news')">
-        <span class="badge-live">📺 WNN 24H新聞台</span>
-        <span id="banner-event-text">WNN 衛星新聞台連線中...</span>
-        <small style="margin-left:auto; color: var(--accent);">進入新聞台 ➔</small>
+      <!-- 頂部 24H 自動新聞台跑馬燈 -->
+      <div class="broadcast-banner" onclick="switchView('events')">
+        <span class="badge-live">📺 GNN 新聞台</span>
+        <span id="banner-event-text">連線全球新聞衛星中...</span>
+        <small style="margin-left:auto; color: var(--accent);">查看新聞與股價影響 ➔</small>
       </div>
 
       <!-- 頂部搜尋與探索列 -->
       <header class="topbar">
-        <input type="text" id="search-input" placeholder="🔎 搜尋國家、領袖、經緯度、語言或標籤..." />
+        <input type="text" id="search-input" placeholder="🔎 搜尋國家、企業股票、領袖、語言或標籤..." />
         <button id="random-country-btn" class="btn-primary">🧭 隨機探索國家</button>
       </header>
 
@@ -91,99 +90,543 @@
             <strong class="stat-value" id="stat-gdp">$0</strong>
           </div>
           <div class="stat-card">
-            <span class="stat-label">全球股市總市值指數</span>
-            <strong class="stat-value" id="stat-market-idx">0 pts</strong>
+            <span class="stat-label">全球股市總市值</span>
+            <strong class="stat-value" id="stat-market-cap">$0</strong>
           </div>
         </div>
 
         <div class="dashboard-split">
           <div class="panel">
-            <h3>📈 各國主權指數即時行情</h3>
-            <div id="dashboard-stock-list" class="ranking-list"></div>
+            <h3>🏆 國家經濟排名 (GDP)</h3>
+            <div id="gdp-ranking-list" class="ranking-list"></div>
           </div>
           <div class="panel">
-            <h3>📺 WNN 自動新聞台最新頭條</h3>
+            <h3>📺 GNN 最新新聞快報 (影響股市)</h3>
             <div id="dashboard-events-list" class="event-mini-list"></div>
           </div>
         </div>
       </section>
 
-      <!-- 視圖 2：自動新聞台 & 地理通播系統 -->
-      <section id="view-news" class="view">
-        <div class="view-header">
-          <h2>📺 WNN 自動新聞台 & 地理通播中心</h2>
-          <div style="display:flex; gap:8px; align-items:center;">
-            <span style="font-size:0.82rem; color:var(--success);">● 自動播報與股價聯動運作中</span>
-            <button id="trigger-auto-news-btn" class="btn-primary" style="padding:8px 14px;">⚡ 立即插播突發新聞</button>
-          </div>
-        </div>
-
+      <!-- 視圖 2：24H 自動新聞台 & 地理通播系統 -->
+      <section id="view-events" class="view">
+        <h2>📺 24H 全球自動新聞台 & 地理通播中心</h2>
         <div class="builder-layout">
           <div class="panel">
             <div class="view-header">
-              <h3>📡 24小時新聞與地理事件流</h3>
-              <select id="event-filter-type" class="select-input">
-                <option value="ALL">全部頻道</option>
-                <option value="新聞">📰 新聞 (自動財經/時事)</option>
-                <option value="自然災害">🌪️ 自然災害 (颱風/地震)</option>
-                <option value="地理變動">🌋 地理變動 / 板塊</option>
-                <option value="國家動態">🏴 國家成立 / 領土</option>
-                <option value="外交條約">🕊️ 外交 / 交通 / 決議</option>
-              </select>
+              <h3>📡 全球新聞聯播牆</h3>
+              <div style="display:flex; gap:8px;">
+                <select id="event-filter-type" class="select-input">
+                  <option value="ALL">全部頻道</option>
+                  <option value="新聞">📰 新聞 (自動新聞台/股市快訊)</option>
+                  <option value="地理變動">🌋 地理變動 / 地震</option>
+                  <option value="自然災害">🌪️ 自然災害 / 颱風</option>
+                  <option value="國家動態">🏴 國家成立 / 領土變更</option>
+                  <option value="外交條約">🕊️ 外交 / 交通</option>
+                </select>
+                <button id="trigger-auto-event-btn" class="btn-secondary">⚡ 立即插播一則新聞</button>
+              </div>
             </div>
             <div id="events-feed-list" class="events-feed"></div>
           </div>
 
           <div class="panel">
-            <h3>📢 記者投稿 / 發布國家新聞稿</h3>
+            <h3>📢 記者投稿 / 手動發布新聞通播</h3>
             <form id="event-publish-form" class="builder-form">
               <div class="form-row">
                 <div class="form-group">
                   <label>頻道類型 *</label>
                   <select id="e-type" class="select-input">
                     <option value="新聞">📰 新聞</option>
-                    <option value="自然災害">🌪️ 自然災害</option>
                     <option value="地理變動">🌋 地理變動</option>
+                    <option value="自然災害">🌪️ 自然災害</option>
                     <option value="國家動態">🏴 國家動態</option>
                     <option value="外交條約">🕊️ 外交條約</option>
                   </select>
                 </div>
                 <div class="form-group">
-                  <label>相關國家 (影響其股價) *</label>
-                  <select id="e-target-country" class="select-input"></select>
+                  <label>影響等級 *</label>
+                  <select id="e-severity" class="select-input">
+                    <option value="一般">🟢 一般</option>
+                    <option value="重大">🟡 重大</option>
+                    <option value="緊急">🔴 緊急</option>
+                  </select>
                 </div>
               </div>
               <div class="form-row">
                 <div class="form-group">
-                  <label>對該國股市影響 *</label>
-                  <select id="e-market-impact" class="select-input">
-                    <option value="0.06">📈 重大利多 (+6%)</option>
-                    <option value="0.02">🔼 小幅利多 (+2%)</option>
-                    <option value="0">➖ 中性無影響 (0%)</option>
-                    <option value="-0.03">🔽 小幅利空 (-3%)</option>
-                    <option value="-0.08">📉 重大利空 (-8%)</option>
+                  <label>涉及國家 (影響該國股價)</label>
+                  <select id="e-target-country" class="select-input">
+                    <option value="">無特定國家</option>
                   </select>
                 </div>
                 <div class="form-group">
-                  <label>發生地點 *</label>
-                  <input type="text" id="e-region" placeholder="例如：星輝市金融中心" required />
+                  <label>股市影響方向</label>
+                  <select id="e-market-impact" class="select-input">
+                    <option value="0">➖ 中性 (0%)</option>
+                    <option value="0.06">📈 重大利多 (+6%)</option>
+                    <option value="0.03">📈 小幅利多 (+3%)</option>
+                    <option value="-0.04">📉 小幅利空 (-4%)</option>
+                    <option value="-0.08">📉 重大利空 (-8%)</option>
+                  </select>
                 </div>
               </div>
               <div class="form-group">
+                <label>發生地點 *</label>
+                <input type="text" id="e-region" placeholder="例如：星輝市金融中心" required />
+              </div>
+              <div class="form-group">
                 <label>新聞標題 *</label>
-                <input type="text" id="e-title" placeholder="輸入新聞頭條..." required />
+                <input type="text" id="e-title" placeholder="輸入新聞標題..." required />
               </div>
               <div class="form-group">
                 <label>新聞內文 *</label>
-                <textarea id="e-content" rows="4" placeholder="輸入詳細報導內容..." required></textarea>
+                <textarea id="e-content" rows="3" placeholder="輸入詳細報導內容..." required></textarea>
               </div>
-              <button type="submit" class="btn-primary" style="padding: 12px;">📡 發送新聞並同步影響股價</button>
+              <button type="submit" class="btn-primary" style="padding: 12px;">📡 立即全網聯播</button>
             </form>
           </div>
         </div>
       </section>
 
-      <!-- 視圖 3：全球股票交易所 (玩家買賣 + 系統虛擬買家) -->
+      <!-- 視圖 3：全球股票交易所 (玩家買賣 + 虛擬買家 AI) -->
       <section id="view-stocks" class="view">
         <div class="view-header">
-          <h2>📈 世界聯合
+          <h2>📈 全球證券交易所 (World Stock Exchange)</h2>
+          <div class="wallet-hud">
+            <span>💰 可用資金：<strong id="player-cash" style="color:var(--success);">$100,000</strong></span>
+            <span style="margin-left:14px;">📊 持股總值：<strong id="player-portfolio-val" style="color:var(--accent);">$0</strong></span>
+          </div>
+        </div>
+
+        <div class="builder-layout">
+          <!-- 左側：各國上市公司報價表 -->
+          <div class="panel">
+            <div class="view-header">
+              <h3>🏢 各國掛牌企業即時行情</h3>
+              <span class="badge-flow">🤖 虛擬買家 AI 撮合中</span>
+            </div>
+            <div id="stocks-market-list" class="events-feed"></div>
+          </div>
+
+          <!-- 右側：下單交易與虛擬買家成交紀錄 -->
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <div class="panel">
+              <h3>💹 股票交易下單台</h3>
+              <form id="stock-trade-form" class="builder-form">
+                <div class="form-group">
+                  <label>選擇股票標的 *</label>
+                  <select id="trade-stock-select" class="select-input"></select>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>交易方向</label>
+                    <select id="trade-action" class="select-input">
+                      <option value="BUY">🟢 買進 (Buy)</option>
+                      <option value="SELL">🔴 賣出 (Sell)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>股數 (Shares)</label>
+                    <input type="number" id="trade-shares" value="10" min="1" max="10000" required />
+                  </div>
+                </div>
+                <button type="submit" class="btn-primary" style="padding:12px;">⚡ 立即市價成交</button>
+              </form>
+              <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--border);">
+                <h4 style="font-size:0.9rem; margin-bottom:8px;">💼 我的持股庫存</h4>
+                <div id="my-holdings-list" style="font-size:0.85rem; color:var(--text-muted);">尚未持有任何股票</div>
+              </div>
+            </div>
+
+            <div class="panel">
+              <h3>🤖 交易所即時成交明細 (含系統虛擬買家)</h3>
+              <div id="stock-ticker-log" class="events-feed" style="max-height:220px;"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 視圖 4：聯合國大會制度 (即時聊天室 + 決議投票) -->
+      <section id="view-un" class="view">
+        <h2>🏛️ 聯合國大會 (UN General Assembly 議事廳)</h2>
+        <div class="builder-layout">
+          <!-- 左側：即時議事聊天室 -->
+          <div class="panel" style="display:flex; flex-direction:column; height:600px;">
+            <div class="view-header">
+              <h3>💬 各國代表即時辯論大廳</h3>
+              <span style="font-size:0.8rem; color:var(--accent);" id="un-speaker-badge">發言身份：訪客觀察員</span>
+            </div>
+            <div id="un-chat-messages" class="un-chat-box"></div>
+            <form id="un-chat-form" style="display:flex; gap:8px; margin-top:12px;">
+              <input type="text" id="un-chat-input" placeholder="輸入外交發言、抗議聲明或討論內容..." style="flex:1; padding:10px; border-radius:6px; border:1px solid var(--border); background:var(--bg-dark); color:#fff;" required />
+              <button type="submit" class="btn-primary">發言</button>
+            </form>
+          </div>
+
+          <!-- 右側：聯合國決議案與各國投票系統 -->
+          <div class="panel">
+            <h3>📜 聯合國大會決議案投票</h3>
+            <form id="un-proposal-form" class="builder-form" style="margin-bottom:18px; padding-bottom:16px; border-bottom:1px solid var(--border);">
+              <div class="form-group">
+                <label>提出新全球決議案標題 *</label>
+                <input type="text" id="un-prop-title" placeholder="例如：第 42 號決議：全球海洋環境保護公約" required />
+              </div>
+              <div class="form-group">
+                <label>決議案條文說明 *</label>
+                <input type="text" id="un-prop-desc" placeholder="簡述各國需遵守的國際義務..." required />
+              </div>
+              <button type="submit" class="btn-secondary">📣 提交大會表決</button>
+            </form>
+            <div id="un-proposals-list" class="events-feed" style="max-height:340px;"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 視圖 5：經緯度互動地圖 & 手繪有限國土面積 -->
+      <section id="view-map" class="view">
+        <div class="view-header">
+          <h2>🗺️ 經緯度世界地圖 & 領土繪製</h2>
+          <div class="layer-controls">
+            <button class="layer-btn active" data-layer="political">政區與領土</button>
+            <button class="layer-btn" data-layer="transport">交通航線圖</button>
+            <button class="layer-btn" data-layer="population">人口熱度</button>
+            <button id="toggle-draw-mode-btn" class="btn-secondary" style="margin-left:10px;">🖌️ 開啟手繪國土模式</button>
+          </div>
+        </div>
+
+        <div id="territory-draw-toolbar" class="draw-toolbar hidden">
+          <div>
+            <strong>🖌️ 領土手繪模式：</strong>
+            選擇國家：<select id="draw-target-country" class="select-input"></select>
+          </div>
+          <div>
+            已繪製面積：<strong id="draw-used-area" style="color:var(--accent);">0</strong> /
+            <strong id="draw-max-area">10,000</strong> km²
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button id="clear-territory-btn" class="btn-tiny">🧹 重畫</button>
+            <button id="save-territory-btn" class="btn-primary" style="padding:6px 12px;">💾 儲存領土</button>
+          </div>
+        </div>
+
+        <div class="map-canvas" id="world-map-canvas">
+          <div class="latlon-grid"></div>
+          <div class="coord-hud" id="cursor-coord-hud">經緯度：0.0°N, 0.0°E</div>
+          <svg id="map-svg-layer" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+          <div id="map-pins-container"></div>
+        </div>
+        <p class="hint">💡 移動滑鼠可即時讀取全球經緯度；開啟「手繪國土模式」後，在地圖上依序點擊頂點即可框出你的國土。</p>
+      </section>
+
+      <!-- 視圖 6：國家百科 & 專屬官網入口 -->
+      <section id="view-countries" class="view">
+        <div class="view-header">
+          <h2>🏳️ 世界國家名錄 & 官方入口網站</h2>
+          <button class="btn-primary" onclick="openBuilderForNew()">➕ 創建我的新國家</button>
+        </div>
+        <div id="countries-grid" class="countries-grid"></div>
+      </section>
+
+      <!-- 視圖 7：創建 / 管理我的國家 + 設計國家獨特網站 -->
+      <section id="view-builder" class="view">
+        <div class="view-header">
+          <h2 id="builder-mode-title">🎨 創建國家 & 設計專屬國家官網</h2>
+          <select id="edit-country-selector" class="select-input">
+            <option value="NEW">➕ 建立全新國家...</option>
+          </select>
+        </div>
+        <p id="permission-notice" class="hint" style="margin-bottom:14px; color:var(--warning);"></p>
+
+        <div class="builder-layout">
+          <form id="country-builder-form" class="panel builder-form">
+            <input type="hidden" id="b-id" value="" />
+            <h3>1. 國家基本檔案</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label>國家簡稱 *</label>
+                <input type="text" id="b-name" required />
+              </div>
+              <div class="form-group">
+                <label>官方全稱 *</label>
+                <input type="text" id="b-official" required />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>國家代碼 (3碼) *</label>
+                <input type="text" id="b-code" maxlength="3" style="text-transform:uppercase" required />
+              </div>
+              <div class="form-group">
+                <label>國旗 Emoji *</label>
+                <input type="text" id="b-flag" required />
+              </div>
+              <div class="form-group">
+                <label>領土與官網主色</label>
+                <input type="color" id="b-color" value="#38bdf8" style="height:40px; padding:2px;" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>首都名稱 *</label>
+                <input type="text" id="b-capital" required />
+              </div>
+              <div class="form-group">
+                <label>政治體制 *</label>
+                <input type="text" id="b-gov" required />
+              </div>
+              <div class="form-group">
+                <label>國家元首 *</label>
+                <input type="text" id="b-leader" required />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>總人口 (人)</label>
+                <input type="number" id="b-pop" value="25000000" min="1" required />
+              </div>
+              <div class="form-group">
+                <label>GDP (美元)</label>
+                <input type="number" id="b-gdp" value="450000000000" min="1" required />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>首都緯度 (-90 ~ +90)</label>
+                <input type="number" id="b-lat" step="0.1" min="-90" max="90" value="15.0" required />
+              </div>
+              <div class="form-group">
+                <label>首都經度 (-180 ~ +180)</label>
+                <input type="number" id="b-lon" step="0.1" min="-180" max="180" value="25.0" required />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label>貨幣名稱與代碼</label>
+                <input type="text" id="b-currency" required />
+              </div>
+              <div class="form-group">
+                <label>官方語言</label>
+                <input type="text" id="b-lang" required />
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>宗教信仰</label>
+              <input type="text" id="b-religion" required />
+            </div>
+            <div class="form-group">
+              <label>主要城市 (頓號「、」分隔)</label>
+              <input type="text" id="b-cities" required />
+            </div>
+            <div class="form-group">
+              <label>國家標籤 (逗號「,」分隔)</label>
+              <input type="text" id="b-tags" required />
+            </div>
+            <div class="form-group">
+              <label>國家簡介</label>
+              <textarea id="b-desc" rows="2" required></textarea>
+            </div>
+
+            <h3 style="margin-top:10px; color:var(--accent);">2. 🎨 設計獨特國家官方網站 (National Portal)</h3>
+            <div class="form-row">
+              <div class="form-group">
+                <label>官網風格主題</label>
+                <select id="b-web-theme" class="select-input">
+                  <option value="cyber">🌌 未來科技風 (Cyberpunk Dark)</option>
+                  <option value="royal">👑 皇家古典金 (Royal Gold)</option>
+                  <option value="eco">🌿 自然生態綠 (Eco Emerald)</option>
+                  <option value="minimal">🏛️ 現代白金政務風 (Clean Civic)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>國家精神標語 (Slogan)</label>
+                <input type="text" id="b-web-slogan" placeholder="例如：向星辰大海邁進！" />
+              </div>
+            </div>
+            <div class="form-group">
+              <label>官網頭條政令 / 歡迎公告</label>
+              <input type="text" id="b-web-notice" placeholder="例如：2028 年度國際觀光免簽證正式開放！" />
+            </div>
+            <div class="form-group">
+              <label>觀光亮點與特色文化介紹 (顯示於國家官網)</label>
+              <textarea id="b-web-culture" rows="2" placeholder="介紹你們國家的獨特美食、節慶、建築奇觀或給外國遊客的指南..."></textarea>
+            </div>
+
+            <div class="form-row">
+              <button type="submit" id="builder-submit-btn" class="btn-primary" style="flex: 2; padding: 12px;">✨ 儲存國家與專屬官網</button>
+              <button type="button" id="delete-country-btn" class="btn-danger hidden" style="flex: 1;">🗑️ 刪除國家</button>
+            </div>
+          </form>
+
+          <div class="panel">
+            <h3>💾 資料庫匯出 (同步至 GitHub)</h3>
+            <p class="hint" style="margin-bottom:10px;">管理員可複製完整 <code>countries.json</code> 更新至 GitHub 倉庫：</p>
+            <pre id="json-output-box" class="code-box" style="max-height:460px;"></pre>
+            <button id="copy-json-btn" class="btn-secondary" style="margin-top:10px;">📋 一鍵複製 countries.json</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- 視圖 8：交通與航線系統 -->
+      <section id="view-transport" class="view">
+        <h2>🚆 全球交通與跨國航線系統</h2>
+        <div class="builder-layout">
+          <div class="panel">
+            <h3>🌐 營運中交通幹線與航線</h3>
+            <div id="transport-list" class="events-feed"></div>
+          </div>
+          <div class="panel">
+            <h3>➕ 建設新交通路線</h3>
+            <form id="transport-form" class="builder-form">
+              <div class="form-group">
+                <label>交通類型 *</label>
+                <select id="t-type" class="select-input">
+                  <option value="高速鐵路">🚄 高速鐵路</option>
+                  <option value="國際航空">✈️ 國際航空航線</option>
+                  <option value="海運航線">🚢 遠洋海運航線</option>
+                  <option value="跨國公路">🛣️ 跨國高速公路</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>路線名稱 *</label>
+                <input type="text" id="t-name" placeholder="例如：泛大陸中央高鐵" required />
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>起點國家 *</label>
+                  <select id="t-from" class="select-input"></select>
+                </div>
+                <div class="form-group">
+                  <label>終點國家 *</label>
+                  <select id="t-to" class="select-input"></select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>起訖樞紐城市 / 港口 / 機場 *</label>
+                <input type="text" id="t-hubs" placeholder="例如：星輝國際機場 ⇄ 森之都機場" required />
+              </div>
+              <div class="form-group">
+                <label>設計運量 / 班次 *</label>
+                <input type="text" id="t-cap" placeholder="例如：每日 40 班次 / 8 萬人次" required />
+              </div>
+              <button type="submit" class="btn-primary" style="padding:12px;">🚆 竣工通車並繪製航線</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- 視圖 9：外交與國際組織 -->
+      <section id="view-diplomacy" class="view">
+        <h2>🕊️ 國際外交關係與世界組織</h2>
+        <div class="builder-layout">
+          <div class="panel">
+            <h3>🤝 雙邊外交條約與狀態</h3>
+            <div id="diplomacy-relations-list" class="events-feed" style="margin-bottom:24px;"></div>
+            <h3>🏛️ 國際組織名錄</h3>
+            <div id="diplomacy-orgs-list" class="events-feed"></div>
+          </div>
+          <div class="panel">
+            <h3>✍️ 簽署雙邊外交關係</h3>
+            <form id="diplomacy-form" class="builder-form">
+              <div class="form-row">
+                <div class="form-group">
+                  <label>締約國 A</label>
+                  <select id="d-country-a" class="select-input"></select>
+                </div>
+                <div class="form-group">
+                  <label>締約國 B</label>
+                  <select id="d-country-b" class="select-input"></select>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>外交關係狀態</label>
+                <select id="d-status" class="select-input">
+                  <option value="正式建交">🤝 正式建交</option>
+                  <option value="軍事與防禦同盟">🛡️ 軍事與防禦同盟</option>
+                  <option value="自由貿易協定 (FTA)">💰 自由貿易協定 (FTA)</option>
+                  <option value="外交緊張 / 制裁">⚠️ 外交緊張 / 經濟制裁</option>
+                  <option value="斷交 / 敵對狀態">⚔️ 斷交 / 敵對狀態</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>條約或外交備註</label>
+                <input type="text" id="d-note" placeholder="例如：開放免簽證與領空通行權" required />
+              </div>
+              <button type="submit" class="btn-primary" style="padding:12px;">📜 發布外交公報</button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      <!-- 視圖 10：世界時間線 -->
+      <section id="view-timeline" class="view">
+        <h2>📜 世界歷史時間軸</h2>
+        <div class="panel">
+          <ul id="full-timeline" class="timeline-list"></ul>
+        </div>
+      </section>
+
+      <!-- 視圖 11：帳號系統與管理員後台 -->
+      <section id="view-accounts" class="view">
+        <h2>🔐 玩家帳號與世界管理員控制中心</h2>
+        <div class="builder-layout">
+          <div class="panel">
+            <h3>🔑 登入或註冊玩家帳號</h3>
+            <p class="hint" style="margin-bottom:14px;">
+              • <strong>系統綁定世界管理員：</strong>帳號 <code>admin</code> / 密碼 <code>2026</code>（擁有完整管理權與踢服權限）<br/>
+              • <strong>一般玩家：</strong>輸入新帳號與密碼即可註冊，註冊後可創建國家、設計國家官網、在聯合國發言並買賣股票。
+            </p>
+            <form id="auth-form" class="builder-form">
+              <div class="form-group">
+                <label>玩家帳號 / 代號 *</label>
+                <input type="text" id="auth-username" placeholder="例如：admin 或 Captain Huang" required />
+              </div>
+              <div class="form-group">
+                <label>密碼 *</label>
+                <input type="password" id="auth-password" placeholder="輸入密碼" required />
+              </div>
+              <div class="form-row">
+                <button type="submit" class="btn-primary" style="flex:1; padding:12px;">🔓 登入 / 註冊帳號</button>
+                <button type="button" id="logout-btn" class="btn-secondary" style="flex:1;">🚪 登出帳號</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="panel" id="admin-control-panel">
+            <h3>👑 世界管理員控制權限 (踢服 / 封鎖玩家)</h3>
+            <div id="admin-panel-content">
+              <p class="hint">⚠️ 此區塊僅限系統綁定管理員（<code>admin</code>）登入後解鎖操作。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- 國家 Wiki 詳情側邊抽屜 -->
+  <div id="country-drawer" class="drawer hidden">
+    <div class="drawer-content">
+      <div style="display:flex; justify-content:space-between; gap:8px; margin-bottom:20px;">
+        <button id="close-drawer" class="close-btn">✕ 關閉</button>
+        <div style="display:flex; gap:8px;">
+          <button id="drawer-portal-btn" class="btn-secondary">🌐 造訪國家官網</button>
+          <button id="drawer-edit-btn" class="btn-primary" style="padding: 8px 14px;">✏️ 管理此國家</button>
+        </div>
+      </div>
+      <div id="drawer-body"></div>
+    </div>
+  </div>
+
+  <!-- 玩家設計的「獨特國家官方網站」全螢幕預覽彈窗 -->
+  <div id="national-portal-modal" class="portal-modal hidden">
+    <div id="national-portal-container" class="portal-window"></div>
+  </div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
