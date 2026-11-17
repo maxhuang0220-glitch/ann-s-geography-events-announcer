@@ -17,15 +17,17 @@ let unProposals = [];
 let currentUser = null;
 let registeredPlayers = [];
 
-// Flow Time (現實 30 分鐘 = 1,800,000 毫秒 = 虛擬 1 天) & 0.5分鐘自動新聞台
-const MS_PER_SIM_DAY = 30 * 60 * 1000;
+// 跨機標準時間 (UTC Epoch 基準計算，所有玩家裝置時間 100% 同步)
+const MS_PER_SIM_DAY = 30 * 60 * 1000; // 現實 30 分鐘 = 虛擬 1 天
 const AUTO_NEWS_INTERVAL_MS = 30 * 1000; // 0.5 分鐘 = 30 秒刷新一則新聞
 let simDate = { year: 2028, month: 1, day: 1, dayProgress: 0 };
 let flowSpeed = 1;
+let speedOffsetMs = 0; // 用於管理員/本機切換倍速時維持無縫接軌
+let speedAnchorRealMs = Date.now();
 let flowTimer = null;
 let newsTimer = null;
 let aiMarketTimer = null;
-let lastTickTime = Date.now();
+let lastProcessedTotalSimDays = -1;
 
 let currentMapLayer = 'political';
 let isDrawMode = false;
@@ -42,8 +44,7 @@ const KEYS = {
   UN_MSG: 'vw_v3_un_msg',
   UN_PROP: 'vw_v3_un_prop',
   PLAYERS: 'vw_v3_players',
-  SESSION: 'vw_v3_session',
-  DATE: 'vw_v3_date'
+  SESSION: 'vw_v3_session'
 };
 
 // 初始化系統
@@ -87,7 +88,7 @@ async function initWorld() {
 
     // 初始化聯合國大會聊天室與決議案
     unMessages = JSON.parse(localStorage.getItem(KEYS.UN_MSG)) || [
-      { sender: '👑 秘書長 (蔡幸恩)', text: '歡迎各國代表進入聯合國大會堂！請在此進行外交協商或提出全球決議案。', time: '2028/01/01', isAdmin: true }
+      { sender: '👑 秘書長 (蔡幸恩)', text: '歡迎各國代表進入聯合國大會堂！全服已啟用跨機 UTC 標準世界時間。', time: '2028/01/01', isAdmin: true }
     ];
     unProposals = JSON.parse(localStorage.getItem(KEYS.UN_PROP)) || [
       { id: 'prop-1', title: '第 1 號決議：全球領海與跨國航線自由通行公約', desc: '保障所有主權國家民用航空與商船在公海的和平通行權。', author: '星辰聯邦', yes: 2, no: 0 }
@@ -98,7 +99,12 @@ async function initWorld() {
       { username: 'Elena', password: '123', banned: false }
     ];
     currentUser = JSON.parse(localStorage.getItem(KEYS.SESSION)) || null;
-    simDate = JSON.parse(localStorage.getItem(KEYS.DATE)) || { ...worldData.currentDate, dayProgress: 0 };
+
+    // 初始化跨機標準時間錨點
+    flowSpeed = worldData.defaultSpeed ?? 1;
+    speedAnchorRealMs = Date.now();
+    speedOffsetMs = 0;
+    syncStandardWorldTime(true);
 
     updateUserUI();
     refreshAllViews();
@@ -121,7 +127,6 @@ function saveAll() {
   localStorage.setItem(KEYS.UN_MSG, JSON.stringify(unMessages));
   localStorage.setItem(KEYS.UN_PROP, JSON.stringify(unProposals));
   localStorage.setItem(KEYS.PLAYERS, JSON.stringify(registeredPlayers));
-  localStorage.setItem(KEYS.DATE, JSON.stringify(simDate));
   refreshAllViews();
 }
 
@@ -148,51 +153,62 @@ function switchView(viewName) {
 }
 
 // ==========================================
-// 1. Flow Time (30m=1d) & 每 0.5 分鐘自動新聞台 (有好有壞、連動股價)
+// 1. 跨機 UTC 標準時間引擎 (多玩家裝置時間 100% 統一)
 // ==========================================
+function getAccumulatedElapsedMs() {
+  if (flowSpeed === 0) return speedOffsetMs;
+  return speedOffsetMs + (Date.now() - speedAnchorRealMs) * flowSpeed;
+}
+
+function syncStandardWorldTime(isInitial = false) {
+  const epochStartMs = Date.parse(worldData.epochStartISO || '2026-11-17T00:00:00Z');
+  const baseDate = worldData.epochWorldDate || { year: 2028, month: 1, day: 1 };
+
+  // 從創世基準點到現在的真實 UTC 總毫秒數 + 流速偏移
+  const totalWorldRealMs = Math.max(0, (Date.now() - epochStartMs) + getAccumulatedElapsedMs() - (Date.now() - speedAnchorRealMs));
+  const exactTotalSimDays = totalWorldRealMs / MS_PER_SIM_DAY;
+  const wholeSimDays = Math.floor(exactTotalSimDays);
+  const dayProgress = exactTotalSimDays - wholeSimDays;
+
+  // 將總虛擬天數換算為 年 / 月 / 日 (每月固定 30 天，每年 360 天)
+  const baseTotalDays = (baseDate.year * 360) + ((baseDate.month - 1) * 30) + (baseDate.day - 1);
+  const currentTotalDays = baseTotalDays + wholeSimDays;
+
+  const year = Math.floor(currentTotalDays / 360);
+  const remAfterYear = currentTotalDays % 360;
+  const month = Math.floor(remAfterYear / 30) + 1;
+  const day = (remAfterYear % 30) + 1;
+
+  simDate = { year, month, day, dayProgress };
+  updateClockUI();
+
+  if (isInitial) {
+    lastProcessedTotalSimDays = wholeSimDays;
+  } else if (wholeSimDays > lastProcessedTotalSimDays) {
+    const prevYear = Math.floor((baseTotalDays + lastProcessedTotalSimDays) / 360);
+    lastProcessedTotalSimDays = wholeSimDays;
+    if (year > prevYear) {
+      countriesData.forEach(c => {
+        c.population = Math.round(Number(c.population) * 1.012);
+        c.gdp = Math.round(Number(c.gdp) * 1.025);
+      });
+      saveAll();
+    }
+  }
+}
+
 function startFlowTimeLoop() {
   if (flowTimer) clearInterval(flowTimer);
-  lastTickTime = Date.now();
-
   flowTimer = setInterval(() => {
-    const now = Date.now();
-    const deltaMs = now - lastTickTime;
-    lastTickTime = now;
-
-    if (flowSpeed === 0) return;
-
-    simDate.dayProgress = (simDate.dayProgress || 0) + (deltaMs * flowSpeed) / MS_PER_SIM_DAY;
-
-    let dayChanged = false;
-    while (simDate.dayProgress >= 1) {
-      simDate.dayProgress -= 1;
-      simDate.day += 1;
-      dayChanged = true;
-
-      while (simDate.day > 30) {
-        simDate.day -= 30;
-        simDate.month += 1;
-      }
-      while (simDate.month > 12) {
-        simDate.month -= 12;
-        simDate.year += 1;
-        countriesData.forEach(c => {
-          c.population = Math.round(Number(c.population) * 1.012);
-          c.gdp = Math.round(Number(c.gdp) * 1.025);
-        });
-      }
-    }
-
-    updateClockUI();
-    if (dayChanged) saveAll();
+    syncStandardWorldTime(false);
   }, 1000);
 }
 
-// 獨立定時器：每 0.5 分鐘（30 秒）自動刷新一則新聞
+// 獨立定時器：每 0.5 分鐘（30 秒）自動刷新一則新聞（對齊全球標準時間的 :00 與 :30 秒）
 function startAutoNewsLoop() {
   if (newsTimer) clearInterval(newsTimer);
   newsTimer = setInterval(() => {
-    if (flowSpeed === 0) return; // 暫停時間時不刷新新聞
+    if (flowSpeed === 0) return;
     triggerAutoNewsStation();
   }, AUTO_NEWS_INTERVAL_MS);
 }
@@ -201,7 +217,7 @@ function updateClockUI() {
   const m = String(simDate.month).padStart(2, '0');
   const d = String(simDate.day).padStart(2, '0');
   const pct = Math.floor((simDate.dayProgress || 0) * 100);
-  document.getElementById('world-clock-display').textContent = `${simDate.year}年 ${m}月 ${d}日 (${pct}%)`;
+  document.getElementById('world-clock-display').textContent = `🌐 ${simDate.year}年 ${m}月 ${d}日 (${pct}%)`;
 }
 
 // 24H 自動新聞台：好壞消息均衡，直接連動影響該國股價
@@ -213,7 +229,6 @@ function triggerAutoNewsStation() {
   const lon = target.coords?.lon ?? 20;
   const coordStr = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`;
 
-  // 50% 好消息（利多）、50% 壞消息（利空）
   const isGoodNews = Math.random() < 0.5;
   let picked = null;
   let impactPct = 0;
@@ -221,30 +236,22 @@ function triggerAutoNewsStation() {
   if (isGoodNews) {
     const goodPool = [
       {
-        type: '新聞',
-        sev: '重大',
-        minImp: 0.05, maxImp: 0.08,
+        type: '新聞', sev: '重大', minImp: 0.05, maxImp: 0.08,
         title: `🚀 【利多】${target.name}發表新一代量子能源與航太技術突破！`,
         content: `【GNN 科技頭條】${target.name}科研團隊在${target.capital}展示最新研發成果，全球資本湧入搶購，帶動該國企業股價強勢飆漲！`
       },
       {
-        type: '新聞',
-        sev: '一般',
-        minImp: 0.025, maxImp: 0.045,
+        type: '新聞', sev: '一般', minImp: 0.025, maxImp: 0.045,
         title: `📈 【利多】${target.name}季度出口順差與觀光收益雙雙刷新紀錄`,
         content: `【GNN 財經快報】受惠於跨國航線暢旺與內需消費熱絡，${target.officialName}經濟表現大幅優於市場預期。`
       },
       {
-        type: '外交條約',
-        sev: '一般',
-        minImp: 0.02, maxImp: 0.04,
+        type: '外交條約', sev: '一般', minImp: 0.02, maxImp: 0.04,
         title: `🤝 【利多】${target.name}宣布擴大外資減稅與自由貿易優惠`,
         content: `【GNN 政經報導】由 ${target.leader} 領導的政府推出全新招商政策，吸引多家跨國機構加碼投資${target.capital}金融市場。`
       },
       {
-        type: '新聞',
-        sev: '一般',
-        minImp: 0.015, maxImp: 0.035,
+        type: '新聞', sev: '一般', minImp: 0.015, maxImp: 0.035,
         title: `🎉 【利多】${target.name}舉辦國際博覽會，帶動國內產業訂單滿載`,
         content: `【GNN 民生商業】各國採購團齊聚${target.capital}，帶動${target.name}製造業與服務業營收穩健攀升。`
       }
@@ -254,30 +261,22 @@ function triggerAutoNewsStation() {
   } else {
     const badPool = [
       {
-        type: '自然災害',
-        sev: '緊急',
-        minImp: -0.085, maxImp: -0.05,
+        type: '自然災害', sev: '緊急', minImp: -0.085, maxImp: -0.05,
         title: `🌪️ 【利空】強烈熱帶氣旋逼近${target.name}，主要港口與工業區停擺`,
         content: `【GNN 氣象警報】氣象衛星在 (${coordStr}) 觀測到強颱暴風圈籠罩${target.capital}周邊，供應鏈中斷引發市場拋售潮！`
       },
       {
-        type: '地理變動',
-        sev: '重大',
-        minImp: -0.07, maxImp: -0.04,
+        type: '地理變動', sev: '重大', minImp: -0.07, maxImp: -0.04,
         title: `🌋 【利空】${target.name}近海發生規模 6.5 強震，基礎設施啟動檢修`,
         content: `【GNN 地質快訊】震央位於 (${coordStr})，${target.name}交通與能源管線暫時降載運行，投資人紛紛避險減碼。`
       },
       {
-        type: '新聞',
-        sev: '一般',
-        minImp: -0.045, maxImp: -0.02,
+        type: '新聞', sev: '一般', minImp: -0.045, maxImp: -0.02,
         title: `📉 【利空】${target.name}央行釋出緊縮訊號，外資機構大舉獲利了結`,
         content: `【GNN 金融市場】市場擔憂${target.currency}流動性收緊，短線賣壓湧現導致${target.name}代表股走弱。`
       },
       {
-        type: '新聞',
-        sev: '一般',
-        minImp: -0.04, maxImp: -0.018,
+        type: '新聞', sev: '一般', minImp: -0.04, maxImp: -0.018,
         title: `⚠️ 【利空】${target.name}部分製造業傳出原物料短缺與罷工協商`,
         content: `【GNN 產業動態】${target.capital}工會與資方就薪資調整展開談判，部分產線暫緩出貨，影響本季獲利預估。`
       }
@@ -294,7 +293,6 @@ function triggerAutoNewsStation() {
     const pctStr = `${sign}${(impactPct * 100).toFixed(2)}%`;
     stockNote = `（股市即時反應：${stock.ticker} ${pctStr} ➔ $${stock.price.toFixed(2)}）`;
 
-    // 同步記錄到交易所明細
     stockLogs.unshift({
       time: new Date().toLocaleTimeString(),
       actor: isGoodNews ? '📰 利多新聞買盤' : '📰 利空新聞賣壓',
@@ -309,7 +307,7 @@ function triggerAutoNewsStation() {
   eventsData.unshift({
     id: `gnn-${Date.now()}`,
     year: simDate.year,
-    dateStr: `${simDate.year}/${simDate.month}/${simDate.day} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`,
+    dateStr: `${simDate.year}/${simDate.month}/${simDate.day} UTC`,
     type: picked.type,
     severity: picked.sev,
     region: `${target.flag} ${target.name}`,
@@ -350,7 +348,6 @@ function syncStocksWithCountries() {
   });
 }
 
-// 系統虛擬買家 AI（每 4 秒自動撮合買賣）
 function startVirtualBuyersLoop() {
   if (aiMarketTimer) clearInterval(aiMarketTimer);
   aiMarketTimer = setInterval(() => {
@@ -563,7 +560,9 @@ function renderAdminPanel() {
     return;
   }
   container.innerHTML = `
-    <p style="color:var(--success); font-size:0.86rem; margin-bottom:12px;">✅ 已驗證系統管理員身份，你可踢除違規玩家：</p>
+    <p style="color:var(--success); font-size:0.86rem; margin-bottom:12px;">
+      ✅ 已驗證系統管理員身份。目前全球標準時間基準（UTC Epoch）：<code>${worldData.epochStartISO}</code>
+    </p>
     <div class="events-feed">
       ${registeredPlayers.map(p => `
         <div class="ranking-item" style="align-items:center;">
@@ -840,14 +839,20 @@ function setupEventListeners() {
     });
   });
 
-  // Flow Time 流速切換
+  // 跨機標準時間流速切換（保留目前累積進度並切換倍速）
   document.querySelectorAll('.flow-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.flow-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+
+      // 先結算目前這一階段累積的流速偏移量
+      speedOffsetMs = getAccumulatedElapsedMs();
+      speedAnchorRealMs = Date.now();
       flowSpeed = Number(btn.dataset.speed);
+
       const badge = document.getElementById('flow-status-badge');
       badge.textContent = flowSpeed === 0 ? '已暫停' : `${flowSpeed}x (${(30 / flowSpeed).toFixed(1)}m/日)`;
+      syncStandardWorldTime(false);
     });
   });
 
@@ -902,7 +907,7 @@ function setupEventListeners() {
     unMessages.push({
       sender: getSpeakerIdentity(),
       text,
-      time: `${simDate.year}/${simDate.month}/${simDate.day} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+      time: `${simDate.year}/${simDate.month}/${simDate.day} UTC`,
       isAdmin: isAdmin()
     });
     input.value = '';
@@ -921,7 +926,7 @@ function setupEventListeners() {
     unMessages.push({
       sender: '🏛️ 聯合國議事處',
       text: `📜 ${author} 正式提交了新決議案：「${title}」，請各國代表前往右側投票！`,
-      time: `${simDate.year}/${simDate.month}/${simDate.day}`,
+      time: `${simDate.year}/${simDate.month}/${simDate.day} UTC`,
       isAdmin: true
     });
     document.getElementById('un-proposal-form').reset();
@@ -1106,7 +1111,7 @@ function setupEventListeners() {
     eventsData.unshift({
       id: `evt-${Date.now()}`,
       year: simDate.year,
-      dateStr: `${simDate.year}/${simDate.month}/${simDate.day}`,
+      dateStr: `${simDate.year}/${simDate.month}/${simDate.day} UTC`,
       type: document.getElementById('e-type').value,
       severity: document.getElementById('e-severity').value,
       region: document.getElementById('e-region').value.trim(),
