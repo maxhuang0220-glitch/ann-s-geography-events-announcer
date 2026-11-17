@@ -4,29 +4,44 @@ let eventsData = [];
 let transportData = [];
 let diplomacyData = { relations: [], organizations: [] };
 
-// 帳號與權限狀態
-let currentUser = null; // { username, role: 'ADMIN' | 'PLAYER' }
-let registeredPlayers = []; // [{ username, password, banned: false }]
+// 股票市場與玩家資金狀態
+let stocksData = []; // [{ ticker, name, countryId, price, prevPrice, volume }]
+let stockLogs = [];
+let playerPortfolio = { cash: 100000, holdings: {} };
 
-// Flow Time 與地圖繪圖狀態（現實 30 分鐘 = 1,800,000 毫秒 = 虛擬 1 天）
+// 聯合國大會聊天室 & 決議案狀態
+let unMessages = [];
+let unProposals = [];
+
+// 帳號與權限狀態
+let currentUser = null;
+let registeredPlayers = [];
+
+// Flow Time (現實 30 分鐘 = 1,800,000 毫秒 = 虛擬 1 天)
 const MS_PER_SIM_DAY = 30 * 60 * 1000;
 let simDate = { year: 2028, month: 1, day: 1, dayProgress: 0 };
 let flowSpeed = 1;
 let flowTimer = null;
+let aiMarketTimer = null;
 let lastTickTime = Date.now();
+
 let currentMapLayer = 'political';
 let isDrawMode = false;
 let tempPolygonPoints = [];
 let currentDrawerCountryId = null;
 
 const KEYS = {
-  COUNTRIES: 'vw_v2_countries',
-  EVENTS: 'vw_v2_events',
-  TRANSPORT: 'vw_v2_transport',
-  DIPLOMACY: 'vw_v2_diplomacy',
-  PLAYERS: 'vw_v2_players',
-  SESSION: 'vw_v2_session',
-  DATE: 'vw_v2_date'
+  COUNTRIES: 'vw_v3_countries',
+  EVENTS: 'vw_v3_events',
+  TRANSPORT: 'vw_v3_transport',
+  DIPLOMACY: 'vw_v3_diplomacy',
+  STOCKS: 'vw_v3_stocks',
+  PORTFOLIO: 'vw_v3_portfolio',
+  UN_MSG: 'vw_v3_un_msg',
+  UN_PROP: 'vw_v3_un_prop',
+  PLAYERS: 'vw_v3_players',
+  SESSION: 'vw_v3_session',
+  DATE: 'vw_v3_date'
 };
 
 // 初始化系統
@@ -50,17 +65,44 @@ async function initWorld() {
     eventsData = JSON.parse(localStorage.getItem(KEYS.EVENTS)) || defEvents;
     transportData = JSON.parse(localStorage.getItem(KEYS.TRANSPORT)) || defTransport;
     diplomacyData = JSON.parse(localStorage.getItem(KEYS.DIPLOMACY)) || defDiplomacy;
+
+    // 確保每個國家都有專屬官網預設資料
+    countriesData.forEach(c => {
+      if (!c.website) {
+        c.website = {
+          theme: 'cyber',
+          slogan: `歡迎來到${c.officialName} — 榮耀與繁榮之地`,
+          notice: `${c.capital}市政廳發布最新年度發展白皮書。`,
+          culture: `${c.name}擁有獨特的${c.language}文化傳統與壯麗自然景觀，誠摯歡迎世界各國使節與旅客造訪。`
+        };
+      }
+    });
+
+    // 初始化股票市場（為每個國家配發代表性上市企業）
+    stocksData = JSON.parse(localStorage.getItem(KEYS.STOCKS)) || generateInitialStocks();
+    syncStocksWithCountries();
+    playerPortfolio = JSON.parse(localStorage.getItem(KEYS.PORTFOLIO)) || { cash: 100000, holdings: {} };
+
+    // 初始化聯合國大會聊天室與決議案
+    unMessages = JSON.parse(localStorage.getItem(KEYS.UN_MSG)) || [
+      { sender: '👑 秘書長 (蔡幸恩)', text: '歡迎各國代表進入聯合國大會堂！請在此進行外交協商或提出全球決議案。', time: '2028/01/01', isAdmin: true }
+    ];
+    unProposals = JSON.parse(localStorage.getItem(KEYS.UN_PROP)) || [
+      { id: 'prop-1', title: '第 1 號決議：全球領海與跨國航線自由通行公約', desc: '保障所有主權國家民用航空與商船在公海的和平通行權。', author: '星辰聯邦', yes: 2, no: 0 }
+    ];
+
     registeredPlayers = JSON.parse(localStorage.getItem(KEYS.PLAYERS)) || [
       { username: 'Captain Huang', password: '123', banned: false },
       { username: 'Elena', password: '123', banned: false }
     ];
     currentUser = JSON.parse(localStorage.getItem(KEYS.SESSION)) || null;
-    simDate = JSON.parse(localStorage.getItem(KEYS.DATE)) || worldData.currentDate;
+    simDate = JSON.parse(localStorage.getItem(KEYS.DATE)) || { ...worldData.currentDate, dayProgress: 0 };
 
     updateUserUI();
     refreshAllViews();
     setupEventListeners();
     startFlowTimeLoop();
+    startVirtualBuyersLoop();
   } catch (err) {
     console.error("初始化失敗：", err);
   }
@@ -71,6 +113,10 @@ function saveAll() {
   localStorage.setItem(KEYS.EVENTS, JSON.stringify(eventsData));
   localStorage.setItem(KEYS.TRANSPORT, JSON.stringify(transportData));
   localStorage.setItem(KEYS.DIPLOMACY, JSON.stringify(diplomacyData));
+  localStorage.setItem(KEYS.STOCKS, JSON.stringify(stocksData));
+  localStorage.setItem(KEYS.PORTFOLIO, JSON.stringify(playerPortfolio));
+  localStorage.setItem(KEYS.UN_MSG, JSON.stringify(unMessages));
+  localStorage.setItem(KEYS.UN_PROP, JSON.stringify(unProposals));
   localStorage.setItem(KEYS.PLAYERS, JSON.stringify(registeredPlayers));
   localStorage.setItem(KEYS.DATE, JSON.stringify(simDate));
   refreshAllViews();
@@ -79,6 +125,8 @@ function saveAll() {
 function refreshAllViews() {
   renderDashboard();
   renderEventsFeed(document.getElementById('event-filter-type').value || 'ALL');
+  renderStocksMarket();
+  renderUNChamber();
   renderMap();
   renderCountriesGrid(countriesData);
   renderTransport();
@@ -97,7 +145,7 @@ function switchView(viewName) {
 }
 
 // ==========================================
-// 1. 自動 Flow Time 與自動地理通播 / 世界新聞引擎
+// 1. Flow Time (30m=1d) & 24H 自動新聞台 (聯動股價)
 // ==========================================
 function startFlowTimeLoop() {
   if (flowTimer) clearInterval(flowTimer);
@@ -118,22 +166,28 @@ function startFlowTimeLoop() {
       simDate.day += 1;
       dayChanged = true;
 
+      // 每天都有機率由「24H 自動新聞台」播報日常新聞並牽動股價
+      if (Math.random() < 0.35) {
+        triggerAutoNewsStation(false);
+      }
+
       while (simDate.day > 30) {
         simDate.day -= 30;
         simDate.month += 1;
-        onNewMonthTick();
+        triggerAutoNewsStation(true); // 每月必報重大新聞或地理事件
       }
       while (simDate.month > 12) {
         simDate.month -= 12;
         simDate.year += 1;
-        onNewYearTick();
+        countriesData.forEach(c => {
+          c.population = Math.round(Number(c.population) * 1.012);
+          c.gdp = Math.round(Number(c.gdp) * 1.025);
+        });
       }
     }
 
     updateClockUI();
-    if (dayChanged) {
-      localStorage.setItem(KEYS.DATE, JSON.stringify(simDate));
-    }
+    if (dayChanged) saveAll();
   }, 1000);
 }
 
@@ -144,112 +198,328 @@ function updateClockUI() {
   document.getElementById('world-clock-display').textContent = `${simDate.year}年 ${m}月 ${d}日 (${pct}%)`;
 }
 
-function updateClockUI() {
-  const m = String(simDate.month).padStart(2, '0');
-  const d = String(simDate.day).padStart(2, '0');
-  document.getElementById('world-clock-display').textContent = `${simDate.year}年 ${m}月 ${d}日`;
-}
+// 24H 自動新聞台：沒事也會報日常新聞，且會直接影響該國股價
+function triggerAutoNewsStation(forceDisaster = false) {
+  if (countriesData.length === 0) return;
+  const target = countriesData[Math.floor(Math.random() * countriesData.length)];
+  const stock = stocksData.find(s => s.countryId === target.id);
+  const lat = target.coords?.lat ?? 10;
+  const lon = target.coords?.lon ?? 20;
+  const coordStr = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`;
 
-// 每過一個虛擬月，機率觸發自動地理災害或自動世界新聞
-function onNewMonthTick() {
-  if (Math.random() < 0.45) {
-    generateAutoDisasterOrNews();
+  let newsItem = null;
+  let impactPct = 0;
+
+  if (forceDisaster && Math.random() < 0.45) {
+    // 地理災害新聞（利空股價）
+    impactPct = -(0.04 + Math.random() * 0.05); // -4% ~ -9%
+    newsItem = {
+      type: '自然災害',
+      severity: '緊急',
+      region: `${target.flag} ${target.name} (${coordStr})`,
+      title: `🌪️ 強烈熱帶氣旋登陸${target.name}，港口與工業區暫停運作`,
+      content: `【GNN 氣象快報】颱風暴風圈籠罩${target.capital}周邊，市場擔憂供應鏈受阻，相關企業股價應聲下跌。`
+    };
+  } else {
+    // 日常自動新聞台（沒事也會報的財經、科技、民生、觀光新聞，影響股價漲跌）
+    const dailyNewsPool = [
+      {
+        impact: 0.055,
+        sev: '重大',
+        title: `🚀 ${target.name}發表新一代量子能源與航太技術突破！`,
+        content: `【GNN 科技頭條】${target.name}科研團隊在${target.capital}展示最新研發成果，全球投資人高度看好，帶動該國股價大漲！`
+      },
+      {
+        impact: 0.032,
+        sev: '一般',
+        title: `🎉 ${target.name}舉辦年度國際文化博覽會，觀光人潮創新高`,
+        content: `【GNN 民生報導】即使國際局勢平穩，${target.name}國內消費與旅遊市場依然火熱，帶動百貨與航空股穩步上揚。`
+      },
+      {
+        impact: -0.028,
+        sev: '一般',
+        title: `📉 ${target.name}央行釋出緊縮訊號，部分外資獲利了結`,
+        content: `【GNN 財經分析】市場評估${target.currency}匯率波動風險，機構投資人小幅調節${target.name}股市持股。`
+      },
+      {
+        impact: 0.04,
+        sev: '一般',
+        title: `🚢 ${target.name}外貿出口訂單連續三季正成長`,
+        content: `【GNN 經貿快訊】受惠於全球海運與鐵路運量提升，${target.officialName}公布最新貿易順差數據優於預期。`
+      },
+      {
+        impact: -0.035,
+        sev: '一般',
+        title: `⚡ ${target.name}部分工業區進行例行性電網檢修`,
+        content: `【GNN 產業動態】${target.name}能源部門宣布進行為期三天的設備升級，短期產能微幅下修。`
+      }
+    ];
+    const pick = dailyNewsPool[Math.floor(Math.random() * dailyNewsPool.length)];
+    impactPct = pick.impact;
+    newsItem = {
+      type: '新聞',
+      severity: pick.sev,
+      region: `${target.flag} ${target.name}`,
+      title: pick.title,
+      content: pick.content
+    };
   }
+
+  // 套用新聞對該國股票價格的影響
+  if (stock && impactPct !== 0) {
+    stock.prevPrice = stock.price;
+    stock.price = Math.max(5, Number((stock.price * (1 + impactPct)).toFixed(2)));
+    const sign = impactPct > 0 ? '+' : '';
+    newsItem.content += `（股市連動：${stock.ticker} ${sign}${(impactPct * 100).toFixed(1)}% ➔ $${stock.price}）`;
+  }
+
+  eventsData.unshift({
+    id: `gnn-${Date.now()}`,
+    year: simDate.year,
+    dateStr: `${simDate.year}/${simDate.month}/${simDate.day}`,
+    ...newsItem
+  });
+
+  if (eventsData.length > 60) eventsData.pop();
+  saveAll();
 }
 
-// 每過一個虛擬年，世界人口與 GDP 自然微幅成長
-function onNewYearTick() {
+// ==========================================
+// 2. 全球股票系統 (玩家買賣 + 系統虛擬買家 AI)
+// ==========================================
+function generateInitialStocks() {
+  return countriesData.map(c => ({
+    ticker: `${c.code}.WSE`,
+    name: `${c.name}國家控股集團`,
+    countryId: c.id,
+    price: Number((80 + Math.random() * 120).toFixed(2)),
+    prevPrice: 100,
+    volume: 15000
+  }));
+}
+
+function syncStocksWithCountries() {
   countriesData.forEach(c => {
-    c.population = Math.round(Number(c.population) * 1.012);
-    c.gdp = Math.round(Number(c.gdp) * 1.025);
+    if (!stocksData.some(s => s.countryId === c.id)) {
+      stocksData.push({
+        ticker: `${c.code}.WSE`,
+        name: `${c.name}國家開發集團`,
+        countryId: c.id,
+        price: 100.00,
+        prevPrice: 100.00,
+        volume: 5000
+      });
+    }
+  });
+}
+
+// 系統虛擬買家 AI（每 4 秒自動在市場上進行買賣撮合，創造真實波動）
+function startVirtualBuyersLoop() {
+  if (aiMarketTimer) clearInterval(aiMarketTimer);
+  aiMarketTimer = setInterval(() => {
+    if (stocksData.length === 0 || flowSpeed === 0) return;
+
+    const targetStock = stocksData[Math.floor(Math.random() * stocksData.length)];
+    const virtualFunds = ['🤖 星際主權基金', '🤖 量子避險資本', '🤖 遠洋貿易銀行', '🤖 散戶自動交易程式', '🤖 皇家退休基金'];
+    const buyerName = virtualFunds[Math.floor(Math.random() * virtualFunds.length)];
+    const isBuy = Math.random() < 0.52;
+    const shares = Math.floor(Math.random() * 80) + 10;
+
+    // 虛擬買家買進推升股價，賣出壓低股價
+    const deltaPct = (isBuy ? 1 : -1) * (0.002 + Math.random() * 0.012);
+    targetStock.prevPrice = targetStock.price;
+    targetStock.price = Math.max(5, Number((targetStock.price * (1 + deltaPct)).toFixed(2)));
+    targetStock.volume += shares;
+
+    stockLogs.unshift({
+      time: new Date().toLocaleTimeString(),
+      actor: buyerName,
+      action: isBuy ? '買進' : '賣出',
+      ticker: targetStock.ticker,
+      shares,
+      price: targetStock.price
+    });
+    if (stockLogs.length > 25) stockLogs.pop();
+
+    localStorage.setItem(KEYS.STOCKS, JSON.stringify(stocksData));
+    renderStocksMarket();
+    renderDashboard();
+  }, 4000);
+}
+
+function renderStocksMarket() {
+  const listEl = document.getElementById('stocks-market-list');
+  if (!listEl) return;
+
+  listEl.innerHTML = stocksData.map(st => {
+    const c = countriesData.find(item => item.id === st.countryId);
+    const diff = st.price - st.prevPrice;
+    const pct = st.prevPrice ? ((diff / st.prevPrice) * 100).toFixed(2) : '0.00';
+    const isUp = diff >= 0;
+
+    return `
+      <div class="stock-row">
+        <div>
+          <strong>${c ? c.flag : '🏢'} ${st.name}</strong>
+          <span class="event-tag" style="margin-left:6px;">${st.ticker}</span>
+          <div style="font-size:0.78rem; color:var(--text-muted); margin-top:4px;">成交量：${st.volume.toLocaleString()} 股</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:1.15rem; font-weight:bold;">$${st.price.toFixed(2)}</div>
+          <div class="${isUp ? 'price-up' : 'price-down'}" style="font-size:0.82rem;">
+            ${isUp ? '▲' : '▼'} ${Math.abs(diff).toFixed(2)} (${isUp ? '+' : ''}${pct}%)
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // 更新玩家資金與持股
+  document.getElementById('player-cash').textContent = `$${playerPortfolio.cash.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  let portVal = 0;
+  const holdingEntries = Object.entries(playerPortfolio.holdings).filter(([, qty]) => qty > 0);
+
+  if (holdingEntries.length === 0) {
+    document.getElementById('my-holdings-list').textContent = '尚未持有任何股票';
+  } else {
+    document.getElementById('my-holdings-list').innerHTML = holdingEntries.map(([ticker, qty]) => {
+      const st = stocksData.find(s => s.ticker === ticker);
+      const val = st ? st.price * qty : 0;
+      portVal += val;
+      return `<div>• <strong>${ticker}</strong>：${qty} 股（市值 $${val.toLocaleString(undefined, { maximumFractionDigits: 2 })}）</div>`;
+    }).join('');
+  }
+  document.getElementById('player-portfolio-val').textContent = `$${portVal.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
+  // 更新成交明細日誌
+  document.getElementById('stock-ticker-log').innerHTML = stockLogs.map(log => `
+    <div style="font-size:0.8rem; padding:6px 0; border-bottom:1px solid var(--border); display:flex; justify-content:space-between;">
+      <span>[${log.time}] <strong>${log.actor}</strong> <span class="${log.action === '買進' ? 'price-up' : 'price-down'}">${log.action}</span> ${log.ticker} × ${log.shares}</span>
+      <span>@$${log.price.toFixed(2)}</span>
+    </div>
+  `).join('');
+}
+
+// ==========================================
+// 3. 聯合國大會制度 (議事聊天室 + 決議案投票)
+// ==========================================
+function getSpeakerIdentity() {
+  if (!currentUser) return '👤 訪客觀察員';
+  if (isAdmin()) return `👑 聯合國秘書長 (${worldData.administrator})`;
+  const myCountry = countriesData.find(c => c.owner === currentUser.username);
+  return myCountry ? `${myCountry.flag} ${myCountry.name}代表 (${currentUser.username})` : `🎮 無領土代表 (${currentUser.username})`;
+}
+
+function renderUNChamber() {
+  document.getElementById('un-speaker-badge').textContent = `發言身份：${getSpeakerIdentity()}`;
+  const chatBox = document.getElementById('un-chat-messages');
+  chatBox.innerHTML = unMessages.map(m => `
+    <div class="chat-msg ${m.isAdmin ? 'admin-msg' : ''}">
+      <div class="chat-header">
+        <span>${m.sender}</span>
+        <span style="color:var(--text-muted); font-weight:normal;">${m.time}</span>
+      </div>
+      <div style="font-size:0.9rem; line-height:1.45;">${m.text}</div>
+    </div>
+  `).join('');
+  chatBox.scrollTop = chatBox.scrollHeight;
+
+  document.getElementById('un-proposals-list').innerHTML = unProposals.map(p => `
+    <div class="event-card">
+      <div class="event-meta">
+        <span class="event-tag">提案國：${p.author}</span>
+        <span style="color:var(--success)">👍 贊成：${p.yes}</span>
+        <span style="color:var(--danger)">👎 反對：${p.no}</span>
+      </div>
+      <h4>${p.title}</h4>
+      <p style="margin-bottom:10px;">${p.desc}</p>
+      <div style="display:flex; gap:8px;">
+        <button class="btn-secondary" onclick="voteUNProposal('${p.id}', 'yes')">👍 投贊成票</button>
+        <button class="btn-secondary" onclick="voteUNProposal('${p.id}', 'no')">👎 投反對票</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function voteUNProposal(propId, choice) {
+  if (!currentUser) return alert('🔑 請先登入帳號才能代表國家參與聯合國投票！');
+  const prop = unProposals.find(p => p.id === propId);
+  if (!prop) return;
+  if (choice === 'yes') prop.yes += 1;
+  else prop.no += 1;
+
+  unMessages.push({
+    sender: '🏛️ 大會計票系統',
+    text: `${getSpeakerIdentity()} 對「${prop.title}」投下了【${choice === 'yes' ? '贊成' : '反對'}】票！`,
+    time: `${simDate.year}/${simDate.month}/${simDate.day}`,
+    isAdmin: false
   });
   saveAll();
 }
 
-// 自動地理通播（颱風等基礎事件）+ 自動世界新聞生成器
-function generateAutoDisasterOrNews() {
-  if (countriesData.length === 0) return;
-  const targetCountry = countriesData[Math.floor(Math.random() * countriesData.length)];
-  const lat = targetCountry.coords?.lat ?? 10;
-  const lon = targetCountry.coords?.lon ?? 20;
-  const coordStr = `${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`;
+// ==========================================
+// 4. 國家獨特官方網站 (National Portal) 渲染
+// ==========================================
+function openNationalPortal(countryId) {
+  const c = countriesData.find(item => item.id === countryId);
+  if (!c) return;
+  const web = c.website || { theme: 'cyber', slogan: c.officialName, notice: '歡迎造訪！', culture: c.description };
+  const themeClass = `theme-${web.theme || 'cyber'}`;
+  const stock = stocksData.find(s => s.countryId === c.id);
 
-  const isDisaster = Math.random() < 0.5;
-  if (isDisaster) {
-    const disasters = [
-      { type: '自然災害', sev: '緊急', title: `強烈颱風逼近${targetCountry.name}沿海`, content: `氣象衛星在 (${coordStr}) 觀測到熱帶氣旋增強為強烈颱風，預計影響${targetCountry.capital}周邊港口與航線。` },
-      { type: '地理變動', sev: '重大', title: `${targetCountry.name}境內發生規模 6.4 地震`, content: `震央位於 (${coordStr}) 深度 18 公里處，${targetCountry.name}地質局已發布餘震警戒。` },
-      { type: '自然災害', sev: '一般', title: `${targetCountry.name}迎來季節性季風豪雨`, content: `受低壓帶影響，${targetCountry.capital}及周邊農產區降下豐沛雨量，水庫蓄水量大幅回升。` }
-    ];
-    const pick = disasters[Math.floor(Math.random() * disasters.length)];
-    eventsData.unshift({
-      id: `auto-${Date.now()}`,
-      year: simDate.year,
-      dateStr: `${simDate.year}/${simDate.month}/${simDate.day}`,
-      type: pick.type,
-      severity: pick.sev,
-      region: `${targetCountry.flag} ${targetCountry.name} (${coordStr})`,
-      title: `[自動地理通播] ${pick.title}`,
-      content: pick.content
-    });
-  } else {
-    // 自動世界新聞（結合國家數據與近期事件）
-    const latestGeo = eventsData.find(e => e.type === '自然災害' || e.type === '地理變動');
-    const newsTemplates = [
-      {
-        title: `${targetCountry.name}公布年度經濟報告，GDP 突破 $${(targetCountry.gdp / 1e8).toFixed(0)} 億`,
-        content: `【世界財經新聞】由 ${targetCountry.leader} 領導的${targetCountry.officialName}今日在首都${targetCountry.capital}發表經濟白皮書，展現強勁成長動能。`
-      },
-      {
-        title: `各國關注${targetCountry.name}科技與城市現代化進展`,
-        content: `【國際觀察新聞】隨著人口達到 ${(targetCountry.population / 10000).toFixed(0)} 萬人，${targetCountry.name}宣布擴大對外交通與文化交流。`
-      }
-    ];
-    if (latestGeo) {
-      newsTemplates.push({
-        title: `國際救援組織針對「${latestGeo.title.replace('[自動地理通播] ', '')}」召開緊急會議`,
-        content: `【世界頭條新聞】因應近期發生的地理事件（${latestGeo.region}），${targetCountry.name}與多國代表正在協調防災物資與航線改道方案。`
-      });
-    }
-    const newsPick = newsTemplates[Math.floor(Math.random() * newsTemplates.length)];
-    eventsData.unshift({
-      id: `news-${Date.now()}`,
-      year: simDate.year,
-      dateStr: `${simDate.year}/${simDate.month}/${simDate.day}`,
-      type: '新聞',
-      severity: '一般',
-      region: `${targetCountry.flag} ${targetCountry.name}`,
-      title: `📰 ${newsPick.title}`,
-      content: newsPick.content
-    });
-  }
+  document.getElementById('national-portal-container').className = `portal-window ${themeClass}`;
+  document.getElementById('national-portal-container').innerHTML = `
+    <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.2); padding-bottom:16px; margin-bottom:24px;">
+      <div style="display:flex; align-items:center; gap:14px;">
+        <span style="font-size:3rem;">${c.flag}</span>
+        <div>
+          <h1 style="font-size:1.8rem;">${c.officialName} 官方入口網站</h1>
+          <p style="opacity:0.85; font-style:italic;">「${web.slogan}」</p>
+        </div>
+      </div>
+      <button class="close-btn" onclick="document.getElementById('national-portal-modal').classList.add('hidden')">✕ 離開官網</button>
+    </div>
 
-  if (eventsData.length > 50) eventsData.pop();
-  saveAll();
+    <div style="background:rgba(0,0,0,0.25); padding:14px 18px; border-radius:10px; margin-bottom:20px; border-left:4px solid ${c.color || '#38bdf8'};">
+      <strong>📢 國家最新頭條公告：</strong> ${web.notice}
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:20px;">
+      <div style="background:rgba(255,255,255,0.06); padding:18px; border-radius:12px;">
+        <h3 style="margin-bottom:10px;">🏛️ 國家基本國情</h3>
+        <p>• <strong>首都：</strong>${c.capital} (${c.coords?.lat ?? 0}°, ${c.coords?.lon ?? 0}°)</p>
+        <p>• <strong>政治體制：</strong>${c.government}</p>
+        <p>• <strong>國家元首：</strong>${c.leader}</p>
+        <p>• <strong>官方語言：</strong>${c.language}</p>
+        <p>• <strong>法定貨幣：</strong>${c.currency}</p>
+        <p>• <strong>總人口：</strong>${Number(c.population).toLocaleString()} 人</p>
+      </div>
+
+      <div style="background:rgba(255,255,255,0.06); padding:18px; border-radius:12px;">
+        <h3 style="margin-bottom:10px;">🎭 文化特色與觀光指南</h3>
+        <p style="line-height:1.6;">${web.culture}</p>
+        <p style="margin-top:12px;"><strong>🏙️ 推薦造訪城市：</strong>${c.cities.join('、')}</p>
+        ${stock ? `<p style="margin-top:8px;"><strong>📈 國家代表股：</strong>${stock.ticker} ($${stock.price.toFixed(2)})</p>` : ''}
+      </div>
+    </div>
+  `;
+  document.getElementById('national-portal-modal').classList.remove('hidden');
 }
 
 // ==========================================
-// 2. 帳號與權限控制（系統綁定管理員 vs 玩家）
+// 5. 權限、地圖與基礎視圖渲染
 // ==========================================
-function isAdmin() {
-  return currentUser && currentUser.role === 'ADMIN';
-}
-
+function isAdmin() { return currentUser && currentUser.role === 'ADMIN'; }
 function canEditCountry(country) {
   if (!currentUser) return false;
-  if (isAdmin()) return true;
-  return country.owner === currentUser.username;
+  return isAdmin() || country.owner === currentUser.username;
 }
 
 function updateUserUI() {
   const info = document.getElementById('current-user-info');
-  if (!currentUser) {
-    info.innerHTML = `👤 訪客模式 <small style="color:var(--warning)">(登入後可建國)</small>`;
-  } else if (isAdmin()) {
-    info.innerHTML = `👑 <strong>${worldData.adminAccount?.displayName || 'admin'}</strong> <span style="color:var(--danger)">[最高管理員]</span>`;
-  } else {
-    info.innerHTML = `🎮 玩家：<strong>${currentUser.username}</strong>`;
-  }
+  if (!currentUser) info.innerHTML = `👤 訪客模式 <small style="color:var(--warning)">(登入可交易/發言)</small>`;
+  else if (isAdmin()) info.innerHTML = `👑 <strong>${worldData.adminAccount?.displayName || 'admin'}</strong> <span style="color:var(--danger)">[最高管理員]</span>`;
+  else info.innerHTML = `🎮 玩家：<strong>${currentUser.username}</strong>`;
 }
 
 function renderAdminPanel() {
@@ -258,9 +528,8 @@ function renderAdminPanel() {
     container.innerHTML = `<p class="hint">⚠️ 此區塊僅限系統綁定管理員（帳號 <code>admin</code>）登入後操作踢服與玩家權限。</p>`;
     return;
   }
-
   container.innerHTML = `
-    <p style="color:var(--success); font-size:0.88rem; margin-bottom:12px;">✅ 已驗證系統管理員身份，你可管理所有玩家與國家：</p>
+    <p style="color:var(--success); font-size:0.86rem; margin-bottom:12px;">✅ 已驗證系統管理員身份，你可踢除違規玩家：</p>
     <div class="events-feed">
       ${registeredPlayers.map(p => `
         <div class="ranking-item" style="align-items:center;">
@@ -284,46 +553,29 @@ function toggleKickPlayer(username) {
   const target = registeredPlayers.find(p => p.username === username);
   if (!target) return;
   target.banned = !target.banned;
-
-  eventsData.unshift({
-    id: `admin-${Date.now()}`,
-    year: simDate.year,
-    type: '新聞',
-    severity: '重大',
-    region: '世界管理中樞',
-    title: target.banned ? `🚨 玩家「${username}」已被世界管理員踢出伺服器` : `✅ 玩家「${username}」已恢復連線權限`,
-    content: `系統綁定管理員（${worldData.administrator}）執行了帳號權限變更。`
-  });
-
   saveAll();
-  alert(target.banned ? `👢 已將玩家 ${username} 踢出並封鎖登入！` : `✅ 已解除 ${username} 的封鎖！`);
 }
 
-// ==========================================
-// 3. 經緯度地圖 & 有限手繪國土面積引擎
-// ==========================================
 function latLonToPercent(lat, lon) {
-  const x = ((Number(lon) + 180) / 360) * 100;
-  const y = ((90 - Number(lat)) / 180) * 100;
-  return { x: Math.max(2, Math.min(98, x)), y: Math.max(3, Math.min(97, y)) };
+  return {
+    x: Math.max(2, Math.min(98, ((Number(lon) + 180) / 360) * 100)),
+    y: Math.max(3, Math.min(97, ((90 - Number(lat)) / 180) * 100))
+  };
 }
-
 function percentToLatLon(xPct, yPct) {
-  const lon = ((xPct / 100) * 360 - 180).toFixed(1);
-  const lat = (90 - (yPct / 100) * 180).toFixed(1);
-  return { lat: Number(lat), lon: Number(lon) };
+  return {
+    lat: Number((90 - (yPct / 100) * 180).toFixed(1)),
+    lon: Number(((xPct / 100) * 360 - 180).toFixed(1))
+  };
 }
-
-// 使用 Shoelace 公式計算多邊形近似領土面積 (km²)
 function calculatePolygonAreaKm2(points) {
   if (!points || points.length < 3) return 0;
   let area = 0;
   for (let i = 0; i < points.length; i++) {
     const j = (i + 1) % points.length;
-    area += points[i].x * points[j].y;
-    area -= points[j].x * points[i].y;
+    area += points[i].x * points[j].y - points[j].x * points[i].y;
   }
-  return Math.round(Math.abs(area / 2) * 85); // 比例尺換算為 km²
+  return Math.round(Math.abs(area / 2) * 85);
 }
 
 function renderMap() {
@@ -331,27 +583,18 @@ function renderMap() {
   const pinsContainer = document.getElementById('map-pins-container');
   let svgHTML = '';
 
-  // 1. 繪製各國手繪領土多邊形
   countriesData.forEach(c => {
     const pts = (isDrawMode && document.getElementById('draw-target-country').value === c.id && tempPolygonPoints.length > 0)
-      ? tempPolygonPoints
-      : (c.territoryPoints || []);
-
+      ? tempPolygonPoints : (c.territoryPoints || []);
     if (pts.length >= 2) {
       const pointStr = pts.map(p => `${p.x},${p.y}`).join(' ');
       const color = c.color || '#38bdf8';
-      if (pts.length >= 3) {
-        svgHTML += `<polygon points="${pointStr}" fill="${color}" fill-opacity="0.28" stroke="${color}" stroke-width="0.45" />`;
-      } else {
-        svgHTML += `<polyline points="${pointStr}" fill="none" stroke="${color}" stroke-width="0.45" stroke-dasharray="1,1" />`;
-      }
-      pts.forEach(p => {
-        svgHTML += `<circle cx="${p.x}" cy="${p.y}" r="0.6" fill="#fff" />`;
-      });
+      svgHTML += pts.length >= 3
+        ? `<polygon points="${pointStr}" fill="${color}" fill-opacity="0.28" stroke="${color}" stroke-width="0.45" />`
+        : `<polyline points="${pointStr}" fill="none" stroke="${color}" stroke-width="0.45" stroke-dasharray="1,1" />`;
     }
   });
 
-  // 2. 若切換至交通航線圖層，繪製跨國連線
   if (currentMapLayer === 'transport') {
     transportData.forEach(tr => {
       const c1 = countriesData.find(c => c.id === tr.fromCountryId);
@@ -363,80 +606,50 @@ function renderMap() {
       }
     });
   }
-
   svg.innerHTML = svgHTML;
 
-  // 3. 繪製首都與經緯度圖釘
   pinsContainer.innerHTML = countriesData.map(c => {
     const pos = latLonToPercent(c.coords?.lat ?? 0, c.coords?.lon ?? 0);
     let label = `${c.flag} ${c.name}`;
     if (currentMapLayer === 'population') label += ` (${(c.population / 10000).toFixed(0)}萬)`;
-
-    return `
-      <div class="map-pin" style="left:${pos.x}%; top:${pos.y}%; border-color:${c.color || 'var(--accent)'}"
-           onclick="if(!isDrawMode) openCountryWiki('${c.id}')">
-        ${label}
-      </div>
-    `;
+    return `<div class="map-pin" style="left:${pos.x}%; top:${pos.y}%; border-color:${c.color || 'var(--accent)'}" onclick="if(!isDrawMode) openCountryWiki('${c.id}')">${label}</div>`;
   }).join('');
 }
 
-function updateDrawAreaHUD() {
-  const targetId = document.getElementById('draw-target-country').value;
-  const country = countriesData.find(c => c.id === targetId);
-  if (!country) return;
-  const maxArea = country.maxTerritoryArea || 10000;
-  const currentPts = tempPolygonPoints.length > 0 ? tempPolygonPoints : (country.territoryPoints || []);
-  const usedArea = calculatePolygonAreaKm2(currentPts);
-
-  document.getElementById('draw-max-area').textContent = maxArea.toLocaleString();
-  const usedEl = document.getElementById('draw-used-area');
-  usedEl.textContent = usedArea.toLocaleString();
-  usedEl.style.color = usedArea > maxArea ? 'var(--danger)' : 'var(--accent)';
-}
-
-// ==========================================
-// 4. 其他視圖渲染 (Dashboard / 通播 / 百科 / 交通 / 外交)
-// ==========================================
 function renderDashboard() {
   document.getElementById('world-title').textContent = worldData.worldName;
   updateClockUI();
 
   const totalPop = countriesData.reduce((s, c) => s + Number(c.population), 0);
   const totalGDP = countriesData.reduce((s, c) => s + Number(c.gdp), 0);
+  const totalMarketCap = stocksData.reduce((s, st) => s + st.price * 1000000, 0);
 
   document.getElementById('stat-countries').textContent = `${countriesData.length} 國`;
   document.getElementById('stat-pop').textContent = `${(totalPop / 10000).toLocaleString()} 萬`;
   document.getElementById('stat-gdp').textContent = `$${(totalGDP / 1e12).toFixed(2)} 兆`;
-  document.getElementById('stat-transport').textContent = `${transportData.length} 條`;
+  document.getElementById('stat-market-cap').textContent = `$${(totalMarketCap / 1e8).toFixed(1)} 億`;
 
   if (eventsData.length > 0) {
-    const latest = eventsData[0];
-    document.getElementById('banner-event-text').innerHTML = `<strong>[${latest.type}]</strong> ${latest.title}`;
+    document.getElementById('banner-event-text').innerHTML = `<strong>[${eventsData[0].type}]</strong> ${eventsData[0].title}`;
   }
 
   const sortedByGDP = [...countriesData].sort((a, b) => b.gdp - a.gdp);
   document.getElementById('gdp-ranking-list').innerHTML = sortedByGDP.map((c, i) => `
     <div class="ranking-item">
-      <span>#${i + 1} ${c.flag} <strong>${c.name}</strong> <small style="color:var(--text-muted)">(${c.owner})</small></span>
+      <span>#${i + 1} ${c.flag} <strong>${c.name}</strong></span>
       <span>$${(c.gdp / 1e8).toLocaleString()} 億</span>
     </div>
   `).join('');
 
   document.getElementById('dashboard-events-list').innerHTML = eventsData.slice(0, 4).map(ev => `
     <div class="event-card type-${ev.type} sev-${ev.severity}" style="margin-bottom:8px; padding:10px;">
-      <div class="event-meta">
-        <span class="event-tag">${ev.type}</span>
-        <span>${ev.dateStr || ev.year + '年'} · ${ev.region}</span>
-      </div>
-      <h4 style="font-size:0.92rem;">${ev.title}</h4>
+      <div class="event-meta"><span class="event-tag">${ev.type}</span><span>${ev.dateStr || ev.year + '年'}</span></div>
+      <h4 style="font-size:0.9rem;">${ev.title}</h4>
     </div>
   `).join('');
 
   if (worldData.timeline) {
-    document.getElementById('full-timeline').innerHTML = worldData.timeline.map(t => `
-      <li><span class="timeline-year">${t.year}</span>${t.event}</li>
-    `).join('');
+    document.getElementById('full-timeline').innerHTML = worldData.timeline.map(t => `<li><span class="timeline-year">${t.year}</span>${t.event}</li>`).join('');
   }
 }
 
@@ -457,43 +670,28 @@ function renderEventsFeed(filterType) {
 }
 
 function renderCountriesGrid(list) {
-  document.getElementById('countries-grid').innerHTML = list.map(c => {
-    const editable = canEditCountry(c);
-    const area = calculatePolygonAreaKm2(c.territoryPoints);
-    return `
-      <div class="country-card">
-        <div>
-          <h3>${c.flag} ${c.name} <small style="color:var(--text-muted)">(${c.code})</small></h3>
-          <p style="font-size:0.8rem; color:var(--accent); margin:4px 0;">
-            👤 玩家：${c.owner} | 📍 ${c.coords?.lat ?? 0}°, ${c.coords?.lon ?? 0}°
-          </p>
-          <p style="font-size:0.78rem; color:var(--text-muted);">🗺️ 領土面積：${area.toLocaleString()} / ${(c.maxTerritoryArea || 10000).toLocaleString()} km²</p>
-          <p style="margin:8px 0; color:var(--text-muted); font-size:0.88rem;">${c.description}</p>
-          <div>${c.tags.map(t => `<span class="tag">#${t}</span>`).join('')}</div>
-        </div>
-        <div class="card-actions">
-          <button class="btn-secondary" style="flex:1;" onclick="openCountryWiki('${c.id}')">📖 Wiki</button>
-          ${editable ? `<button class="btn-primary" style="flex:1; padding:6px;" onclick="editCountry('${c.id}')">✏️ 管理國家</button>` : ''}
-        </div>
+  document.getElementById('countries-grid').innerHTML = list.map(c => `
+    <div class="country-card">
+      <div>
+        <h3>${c.flag} ${c.name} <small style="color:var(--text-muted)">(${c.code})</small></h3>
+        <p style="font-size:0.78rem; color:var(--accent); margin:4px 0;">👤 玩家：${c.owner} | 📍 ${c.coords?.lat ?? 0}°, ${c.coords?.lon ?? 0}°</p>
+        <p style="margin:8px 0; color:var(--text-muted); font-size:0.86rem;">${c.description}</p>
+        <div>${c.tags.map(t => `<span class="tag">#${t}</span>`).join('')}</div>
       </div>
-    `;
-  }).join('');
+      <div class="card-actions">
+        <button class="btn-secondary" style="flex:1;" onclick="openCountryWiki('${c.id}')">📖 Wiki</button>
+        <button class="btn-secondary" style="flex:1;" onclick="openNationalPortal('${c.id}')">🌐 國家官網</button>
+        ${canEditCountry(c) ? `<button class="btn-primary" style="padding:6px 10px;" onclick="editCountry('${c.id}')">✏️</button>` : ''}
+      </div>
+    </div>
+  `).join('');
 }
 
 function renderTransport() {
   document.getElementById('transport-list').innerHTML = transportData.map(tr => {
     const c1 = countriesData.find(c => c.id === tr.fromCountryId)?.name || '未知';
     const c2 = countriesData.find(c => c.id === tr.toCountryId)?.name || '未知';
-    return `
-      <div class="event-card">
-        <div class="event-meta">
-          <span class="event-tag">${tr.type}</span>
-          <span>${c1} ⇄ ${c2}</span>
-        </div>
-        <h4>${tr.name}</h4>
-        <p>樞紐站點：${tr.hubs} ｜ 運量：${tr.capacity}</p>
-      </div>
-    `;
+    return `<div class="event-card"><div class="event-meta"><span class="event-tag">${tr.type}</span><span>${c1} ⇄ ${c2}</span></div><h4>${tr.name}</h4><p>樞紐：${tr.hubs} ｜ 運量：${tr.capacity}</p></div>`;
   }).join('');
 }
 
@@ -501,21 +699,10 @@ function renderDiplomacy() {
   document.getElementById('diplomacy-relations-list').innerHTML = diplomacyData.relations.map(r => {
     const cA = countriesData.find(c => c.id === r.countryA);
     const cB = countriesData.find(c => c.id === r.countryB);
-    return `
-      <div class="event-card">
-        <div class="event-meta"><span class="event-tag">${r.status}</span></div>
-        <h4>${cA ? cA.flag + cA.name : '未知'} ⇄ ${cB ? cB.flag + cB.name : '未知'}</h4>
-        <p>${r.note}</p>
-      </div>
-    `;
+    return `<div class="event-card"><div class="event-meta"><span class="event-tag">${r.status}</span></div><h4>${cA ? cA.flag + cA.name : '未知'} ⇄ ${cB ? cB.flag + cB.name : '未知'}</h4><p>${r.note}</p></div>`;
   }).join('');
-
   document.getElementById('diplomacy-orgs-list').innerHTML = diplomacyData.organizations.map(org => `
-    <div class="event-card" style="border-left-color:var(--success);">
-      <div class="event-meta"><span class="event-tag">總部：${org.hq}</span></div>
-      <h4>${org.name}</h4>
-      <p>宗旨：${org.purpose}<br/>成員國：${org.members.join('、')}</p>
-    </div>
+    <div class="event-card" style="border-left-color:var(--success);"><div class="event-meta"><span class="event-tag">總部：${org.hq}</span></div><h4>${org.name}</h4><p>${org.purpose}（成員：${org.members.join('、')}）</p></div>
   `).join('');
 }
 
@@ -525,15 +712,16 @@ function populateCountryDropdowns() {
     const el = document.getElementById(id);
     if (el) el.innerHTML = allOptions;
   });
+  document.getElementById('e-target-country').innerHTML = `<option value="">無特定國家</option>` + allOptions;
 
-  // 國家編輯下拉選單（只列出玩家有權限編輯的國家）
   const editableCountries = countriesData.filter(c => canEditCountry(c));
-  document.getElementById('edit-country-selector').innerHTML =
-    `<option value="NEW">➕ 建立全新國家...</option>` +
+  document.getElementById('edit-country-selector').innerHTML = `<option value="NEW">➕ 建立全新國家...</option>` +
     editableCountries.map(c => `<option value="${c.id}">✏️ 編輯：${c.flag} ${c.name}</option>`).join('');
+  document.getElementById('draw-target-country').innerHTML = editableCountries.map(c => `<option value="${c.id}">${c.flag} ${c.name}</option>`).join('');
 
-  document.getElementById('draw-target-country').innerHTML =
-    editableCountries.map(c => `<option value="${c.id}">${c.flag} ${c.name}</option>`).join('');
+  document.getElementById('trade-stock-select').innerHTML = stocksData.map(s =>
+    `<option value="${s.ticker}">${s.ticker} - ${s.name} ($${s.price.toFixed(2)})</option>`
+  ).join('');
 }
 
 function openCountryWiki(countryId) {
@@ -545,21 +733,17 @@ function openCountryWiki(countryId) {
   if (canEditCountry(c)) editBtn.classList.remove('hidden');
   else editBtn.classList.add('hidden');
 
-  const area = calculatePolygonAreaKm2(c.territoryPoints);
   document.getElementById('drawer-body').innerHTML = `
     <h2 style="font-size: 1.7rem;">${c.flag} ${c.name}</h2>
     <p style="color: var(--accent); margin-bottom: 14px;">${c.officialName}</p>
     <p style="line-height: 1.6; margin-bottom: 16px;">${c.description}</p>
     <table class="wiki-table">
       <tr><td>玩家擁有者</td><td>${c.owner}</td></tr>
-      <tr><td>國家代碼</td><td>${c.code}</td></tr>
       <tr><td>首都與經緯度</td><td>${c.capital} (${c.coords?.lat ?? 0}°, ${c.coords?.lon ?? 0}°)</td></tr>
-      <tr><td>已繪製領土面積</td><td>${area.toLocaleString()} / ${(c.maxTerritoryArea || 10000).toLocaleString()} km²</td></tr>
       <tr><td>政體 / 元首</td><td>${c.government} / ${c.leader}</td></tr>
       <tr><td>總人口</td><td>${Number(c.population).toLocaleString()} 人</td></tr>
       <tr><td>GDP</td><td>$${Number(c.gdp).toLocaleString()}</td></tr>
       <tr><td>貨幣 / 語言</td><td>${c.currency} / ${c.language}</td></tr>
-      <tr><td>宗教信仰</td><td>${c.religion}</td></tr>
       <tr><td>主要城市</td><td>${c.cities.join('、')}</td></tr>
     </table>
   `;
@@ -567,25 +751,18 @@ function openCountryWiki(countryId) {
 }
 
 function openBuilderForNew() {
-  if (!currentUser) {
-    alert('🔑 請先登入或註冊玩家帳號，才能創建自己的國家！');
-    switchView('accounts');
-    return;
-  }
+  if (!currentUser) { alert('🔑 請先登入或註冊玩家帳號！'); switchView('accounts'); return; }
   document.getElementById('country-builder-form').reset();
   document.getElementById('b-id').value = '';
-  document.getElementById('builder-mode-title').textContent = '🏴 創建我的新國家';
+  document.getElementById('builder-mode-title').textContent = '🎨 創建新國家 & 設計專屬官網';
   document.getElementById('delete-country-btn').classList.add('hidden');
-  document.getElementById('permission-notice').textContent = `🎮 目前以「${currentUser.username}」身份建立國家，建立後將綁定為你的專屬領土。`;
+  document.getElementById('permission-notice').textContent = `🎮 目前以「${currentUser.username}」身份建立國家與設計官網。`;
   switchView('builder');
 }
 
 function editCountry(countryId) {
   const c = countriesData.find(item => item.id === countryId);
-  if (!c || !canEditCountry(c)) {
-    alert('⛔ 你沒有權限編輯此國家（僅限該國玩家本人或系統管理員）。');
-    return;
-  }
+  if (!c || !canEditCountry(c)) return alert('⛔ 無編輯權限！');
   document.getElementById('country-drawer').classList.add('hidden');
   document.getElementById('b-id').value = c.id;
   document.getElementById('b-name').value = c.name;
@@ -607,17 +784,22 @@ function editCountry(countryId) {
   document.getElementById('b-tags').value = c.tags.join(', ');
   document.getElementById('b-desc').value = c.description;
 
-  document.getElementById('builder-mode-title').textContent = `✏️ 管理國家：${c.flag} ${c.name}`;
+  // 載入國家獨特官網設定
+  document.getElementById('b-web-theme').value = c.website?.theme || 'cyber';
+  document.getElementById('b-web-slogan').value = c.website?.slogan || '';
+  document.getElementById('b-web-notice').value = c.website?.notice || '';
+  document.getElementById('b-web-culture').value = c.website?.culture || '';
+
+  document.getElementById('builder-mode-title').textContent = `✏️ 管理國家與官網：${c.flag} ${c.name}`;
   document.getElementById('delete-country-btn').classList.remove('hidden');
   document.getElementById('edit-country-selector').value = c.id;
   switchView('builder');
 }
 
 // ==========================================
-// 5. 事件監聽器
+// 6. 所有表單與互動事件綁定
 // ==========================================
 function setupEventListeners() {
-  // 導覽切換
   document.querySelectorAll('.nav-btn:not(.disabled)').forEach(btn => {
     btn.addEventListener('click', () => {
       if (btn.dataset.view === 'builder') openBuilderForNew();
@@ -625,14 +807,92 @@ function setupEventListeners() {
     });
   });
 
-  // Flow Time 流速控制
+  // Flow Time 流速切換
   document.querySelectorAll('.flow-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.flow-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       flowSpeed = Number(btn.dataset.speed);
-      document.getElementById('flow-status-badge').textContent = flowSpeed === 0 ? '已暫停' : `運行中 (${flowSpeed}x)`;
+      const badge = document.getElementById('flow-status-badge');
+      badge.textContent = flowSpeed === 0 ? '已暫停' : `${flowSpeed}x (${(30 / flowSpeed).toFixed(1)}m/日)`;
     });
+  });
+
+  // 股票下單交易
+  document.getElementById('stock-trade-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!currentUser) return alert('🔑 請先登入玩家帳號才能買賣股票！');
+
+    const ticker = document.getElementById('trade-stock-select').value;
+    const action = document.getElementById('trade-action').value;
+    const shares = Number(document.getElementById('trade-shares').value);
+    const stock = stocksData.find(s => s.ticker === ticker);
+    if (!stock || shares <= 0) return;
+
+    const totalCost = stock.price * shares;
+    const currentOwned = playerPortfolio.holdings[ticker] || 0;
+
+    if (action === 'BUY') {
+      if (playerPortfolio.cash < totalCost) return alert('❌ 可用資金不足！');
+      playerPortfolio.cash -= totalCost;
+      playerPortfolio.holdings[ticker] = currentOwned + shares;
+      stock.prevPrice = stock.price;
+      stock.price = Number((stock.price * (1 + Math.min(0.05, shares * 0.0005))).toFixed(2));
+    } else {
+      if (currentOwned < shares) return alert('❌ 持有股數不足！');
+      playerPortfolio.cash += totalCost;
+      playerPortfolio.holdings[ticker] = currentOwned - shares;
+      stock.prevPrice = stock.price;
+      stock.price = Math.max(5, Number((stock.price * (1 - Math.min(0.05, shares * 0.0005))).toFixed(2)));
+    }
+
+    stock.volume += shares;
+    stockLogs.unshift({
+      time: new Date().toLocaleTimeString(),
+      actor: `🎮 ${currentUser.username}`,
+      action: action === 'BUY' ? '買進' : '賣出',
+      ticker,
+      shares,
+      price: stock.price
+    });
+    saveAll();
+    alert(`✅ 交易成功！已${action === 'BUY' ? '買進' : '賣出'} ${ticker} ${shares} 股。`);
+  });
+
+  // 聯合國大會發言 & 提案
+  document.getElementById('un-chat-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('un-chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+
+    unMessages.push({
+      sender: getSpeakerIdentity(),
+      text,
+      time: `${simDate.year}/${simDate.month}/${simDate.day} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`,
+      isAdmin: isAdmin()
+    });
+    input.value = '';
+    saveAll();
+  });
+
+  document.getElementById('un-proposal-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (!currentUser) return alert('🔑 請先登入帳號再提交聯合國決議案！');
+    const title = document.getElementById('un-prop-title').value.trim();
+    const desc = document.getElementById('un-prop-desc').value.trim();
+    const myCountry = countriesData.find(c => c.owner === currentUser.username);
+    const author = myCountry ? `${myCountry.flag} ${myCountry.name}` : currentUser.username;
+
+    unProposals.unshift({ id: `prop-${Date.now()}`, title, desc, author, yes: 1, no: 0 });
+    unMessages.push({
+      sender: '🏛️ 聯合國議事處',
+      text: `📜 ${author} 正式提交了新決議案：「${title}」，請各國代表前往右側投票！`,
+      time: `${simDate.year}/${simDate.month}/${simDate.day}`,
+      isAdmin: true
+    });
+    document.getElementById('un-proposal-form').reset();
+    saveAll();
   });
 
   // 帳號登入 / 註冊
@@ -641,38 +901,25 @@ function setupEventListeners() {
     const u = document.getElementById('auth-username').value.trim();
     const p = document.getElementById('auth-password').value.trim();
 
-    // 1. 檢查是否為系統綁定世界管理員
     if (u === (worldData.adminAccount?.username || 'admin')) {
       if (p === (worldData.adminAccount?.password || '2026')) {
         currentUser = { username: u, role: 'ADMIN' };
         localStorage.setItem(KEYS.SESSION, JSON.stringify(currentUser));
         updateUserUI();
         refreshAllViews();
-        alert(`👑 歡迎回來，世界管理員 ${worldData.administrator}！已解鎖最高控制權限。`);
-        return;
-      } else {
-        alert('❌ 管理員密碼錯誤！');
-        return;
-      }
+        return alert(`👑 歡迎回來，世界管理員 ${worldData.administrator}！`);
+      } else return alert('❌ 管理員密碼錯誤！');
     }
 
-    // 2. 一般玩家登入或自動註冊
     let player = registeredPlayers.find(pl => pl.username === u);
     if (player) {
-      if (player.banned) {
-        alert('🚫 你的帳號已被世界管理員踢出並封鎖，無法登入！');
-        return;
-      }
-      if (player.password !== p) {
-        alert('❌ 玩家密碼錯誤！');
-        return;
-      }
+      if (player.banned) return alert('🚫 你的帳號已被世界管理員踢出伺服器！');
+      if (player.password !== p) return alert('❌ 密碼錯誤！');
     } else {
       player = { username: u, password: p, banned: false };
       registeredPlayers.push(player);
-      alert(`🎉 新玩家帳號「${u}」註冊成功！你現在可以創建並管理自己的國家了。`);
+      alert(`🎉 新玩家「${u}」註冊成功！`);
     }
-
     currentUser = { username: u, role: 'PLAYER' };
     localStorage.setItem(KEYS.SESSION, JSON.stringify(currentUser));
     saveAll();
@@ -684,16 +931,13 @@ function setupEventListeners() {
     localStorage.removeItem(KEYS.SESSION);
     updateUserUI();
     refreshAllViews();
-    alert('🚪 已登出帳號。');
   });
 
-  // 地圖滑鼠經緯度即時顯示 & 手繪國土點擊
+  // 地圖經緯度與領土手繪
   const mapCanvas = document.getElementById('world-map-canvas');
   mapCanvas.addEventListener('mousemove', (e) => {
     const rect = mapCanvas.getBoundingClientRect();
-    const xPct = ((e.clientX - rect.left) / rect.width) * 100;
-    const yPct = ((e.clientY - rect.top) / rect.height) * 100;
-    const { lat, lon } = percentToLatLon(xPct, yPct);
+    const { lat, lon } = percentToLatLon(((e.clientX - rect.left) / rect.width) * 100, ((e.clientY - rect.top) / rect.height) * 100);
     document.getElementById('cursor-coord-hud').textContent =
       `經緯度：${Math.abs(lat).toFixed(1)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lon).toFixed(1)}°${lon >= 0 ? 'E' : 'W'}`;
   });
@@ -702,74 +946,41 @@ function setupEventListeners() {
     if (!isDrawMode) return;
     const targetId = document.getElementById('draw-target-country').value;
     const country = countriesData.find(c => c.id === targetId);
-    if (!country || !canEditCountry(country)) {
-      alert('⛔ 你沒有權限繪製此國家的領土！');
-      return;
-    }
+    if (!country || !canEditCountry(country)) return alert('⛔ 無權限繪製此國領土！');
 
     const rect = mapCanvas.getBoundingClientRect();
     const x = Number((((e.clientX - rect.left) / rect.width) * 100).toFixed(1));
     const y = Number((((e.clientY - rect.top) / rect.height) * 100).toFixed(1));
-
-    const candidatePoints = [...tempPolygonPoints, { x, y }];
-    const newArea = calculatePolygonAreaKm2(candidatePoints);
+    const candidate = [...tempPolygonPoints, { x, y }];
+    const area = calculatePolygonAreaKm2(candidate);
     const maxArea = country.maxTerritoryArea || 10000;
+    if (area > maxArea) return alert(`⚠️ 超過領土面積上限 (${maxArea.toLocaleString()} km²)！`);
 
-    if (newArea > maxArea) {
-      alert(`⚠️ 領土面積上限警告！\n此頂點將使領土達到 ${newArea.toLocaleString()} km²，超過貴國上限 (${maxArea.toLocaleString()} km²)！`);
-      return;
-    }
-
-    tempPolygonPoints = candidatePoints;
-    updateDrawAreaHUD();
+    tempPolygonPoints = candidate;
+    document.getElementById('draw-used-area').textContent = area.toLocaleString();
     renderMap();
   });
 
-  // 開關手繪國土模式
   document.getElementById('toggle-draw-mode-btn').addEventListener('click', () => {
-    if (!currentUser) {
-      alert('🔑 請先登入帳號再繪製領土！');
-      switchView('accounts');
-      return;
-    }
+    if (!currentUser) { alert('🔑 請先登入帳號！'); return switchView('accounts'); }
     isDrawMode = !isDrawMode;
     tempPolygonPoints = [];
     document.getElementById('territory-draw-toolbar').classList.toggle('hidden', !isDrawMode);
     mapCanvas.classList.toggle('drawing-mode', isDrawMode);
-    updateDrawAreaHUD();
     renderMap();
   });
 
-  document.getElementById('clear-territory-btn').addEventListener('click', () => {
-    tempPolygonPoints = [];
-    updateDrawAreaHUD();
-    renderMap();
-  });
-
+  document.getElementById('clear-territory-btn').addEventListener('click', () => { tempPolygonPoints = []; renderMap(); });
   document.getElementById('save-territory-btn').addEventListener('click', () => {
     const targetId = document.getElementById('draw-target-country').value;
     const country = countriesData.find(c => c.id === targetId);
-    if (!country || tempPolygonPoints.length < 3) {
-      alert('⚠️ 請至少在地圖上點擊 3 個頂點形成多邊形領土！');
-      return;
-    }
+    if (!country || tempPolygonPoints.length < 3) return alert('⚠️ 至少需要 3 個頂點！');
     country.territoryPoints = [...tempPolygonPoints];
-    const area = calculatePolygonAreaKm2(country.territoryPoints);
-    eventsData.unshift({
-      id: `terr-${Date.now()}`,
-      year: simDate.year,
-      type: '國家動態',
-      severity: '一般',
-      region: `${country.flag} ${country.name}`,
-      title: `${country.name} 劃定最新官方領土疆界`,
-      content: `${country.name} 在經緯度地圖上確認了 ${area.toLocaleString()} km² 的主權領土範圍。`
-    });
     tempPolygonPoints = [];
     saveAll();
-    alert(`✅ 領土邊界已儲存！總面積：${area.toLocaleString()} km²`);
+    alert('✅ 領土邊界已儲存！');
   });
 
-  // 地圖圖層切換
   document.querySelectorAll('.layer-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.layer-btn').forEach(b => b.classList.remove('active'));
@@ -779,7 +990,7 @@ function setupEventListeners() {
     });
   });
 
-  // 國家表單提交
+  // 國家創建 / 編輯 / 設計官網表單
   document.getElementById('country-builder-form').addEventListener('submit', (e) => {
     e.preventDefault();
     if (!currentUser) return;
@@ -791,136 +1002,74 @@ function setupEventListeners() {
     const lat = Number(document.getElementById('b-lat').value);
     const lon = Number(document.getElementById('b-lon').value);
 
+    const websiteConfig = {
+      theme: document.getElementById('b-web-theme').value,
+      slogan: document.getElementById('b-web-slogan').value.trim() || `歡迎造訪${name}`,
+      notice: document.getElementById('b-web-notice').value.trim() || '國政運作一切正常。',
+      culture: document.getElementById('b-web-culture').value.trim() || document.getElementById('b-desc').value.trim()
+    };
+
     if (existingId) {
       const target = countriesData.find(c => c.id === existingId);
       if (!target || !canEditCountry(target)) return;
       Object.assign(target, {
-        name,
-        officialName: document.getElementById('b-official').value.trim(),
-        code,
-        flag,
-        color: document.getElementById('b-color').value,
-        capital: document.getElementById('b-capital').value.trim(),
-        government: document.getElementById('b-gov').value.trim(),
-        leader: document.getElementById('b-leader').value.trim(),
-        population: Number(document.getElementById('b-pop').value),
-        gdp: Number(document.getElementById('b-gdp').value),
-        coords: { lat, lon },
-        currency: document.getElementById('b-currency').value.trim(),
-        language: document.getElementById('b-lang').value.trim(),
-        religion: document.getElementById('b-religion').value.trim(),
+        name, officialName: document.getElementById('b-official').value.trim(), code, flag,
+        color: document.getElementById('b-color').value, capital: document.getElementById('b-capital').value.trim(),
+        government: document.getElementById('b-gov').value.trim(), leader: document.getElementById('b-leader').value.trim(),
+        population: Number(document.getElementById('b-pop').value), gdp: Number(document.getElementById('b-gdp').value),
+        coords: { lat, lon }, currency: document.getElementById('b-currency').value.trim(),
+        language: document.getElementById('b-lang').value.trim(), religion: document.getElementById('b-religion').value.trim(),
         cities: document.getElementById('b-cities').value.split('、').map(s => s.trim()).filter(Boolean),
         tags: document.getElementById('b-tags').value.split(',').map(s => s.trim()).filter(Boolean),
-        description: document.getElementById('b-desc').value.trim()
+        description: document.getElementById('b-desc').value.trim(),
+        website: websiteConfig
       });
-      alert(`✅ 「${flag} ${name}」資料已更新！`);
+      alert(`✅ 「${flag} ${name}」與專屬國家官網已更新！`);
     } else {
       const pos = latLonToPercent(lat, lon);
       const newC = {
         id: `${code.toLowerCase()}-${Date.now().toString().slice(-4)}`,
-        owner: currentUser.username,
-        name,
-        officialName: document.getElementById('b-official').value.trim(),
-        code,
-        flag,
-        color: document.getElementById('b-color').value,
-        capital: document.getElementById('b-capital').value.trim(),
-        government: document.getElementById('b-gov').value.trim(),
-        leader: document.getElementById('b-leader').value.trim(),
-        population: Number(document.getElementById('b-pop').value),
-        gdp: Number(document.getElementById('b-gdp').value),
-        coords: { lat, lon },
-        maxTerritoryArea: 10000,
+        owner: currentUser.username, name, officialName: document.getElementById('b-official').value.trim(),
+        code, flag, color: document.getElementById('b-color').value, capital: document.getElementById('b-capital').value.trim(),
+        government: document.getElementById('b-gov').value.trim(), leader: document.getElementById('b-leader').value.trim(),
+        population: Number(document.getElementById('b-pop').value), gdp: Number(document.getElementById('b-gdp').value),
+        coords: { lat, lon }, maxTerritoryArea: 10000,
         territoryPoints: [
           { x: Math.max(5, pos.x - 4), y: Math.max(5, pos.y - 4) },
           { x: Math.min(95, pos.x + 4), y: Math.max(5, pos.y - 4) },
           { x: Math.min(95, pos.x + 4), y: Math.min(95, pos.y + 4) },
           { x: Math.max(5, pos.x - 4), y: Math.min(95, pos.y + 4) }
         ],
-        currency: document.getElementById('b-currency').value.trim(),
-        language: document.getElementById('b-lang').value.trim(),
+        currency: document.getElementById('b-currency').value.trim(), language: document.getElementById('b-lang').value.trim(),
         religion: document.getElementById('b-religion').value.trim(),
         cities: document.getElementById('b-cities').value.split('、').map(s => s.trim()).filter(Boolean),
         tags: document.getElementById('b-tags').value.split(',').map(s => s.trim()).filter(Boolean),
-        description: document.getElementById('b-desc').value.trim()
+        description: document.getElementById('b-desc').value.trim(),
+        website: websiteConfig
       };
       countriesData.push(newC);
-      eventsData.unshift({
-        id: `evt-${Date.now()}`,
-        year: simDate.year,
-        type: '新聞',
-        severity: '重大',
-        region: `${flag} ${name}`,
-        title: `📰 新國家「${newC.officialName}」宣布建國！`,
-        content: `玩家 ${currentUser.username} 在 (${lat}°, ${lon}°) 建立新國家，定都 ${newC.capital}。`
-      });
-      alert(`🎉 國家「${flag} ${name}」創建成功！`);
+      syncStocksWithCountries();
+      alert(`🎉 國家「${flag} ${name}」已成立，專屬官網與股票代碼 (${code}.WSE) 已自動上線！`);
     }
     saveAll();
   });
 
-  // 交通航線表單
-  document.getElementById('transport-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const newTr = {
-      id: `tr-${Date.now()}`,
-      type: document.getElementById('t-type').value,
-      name: document.getElementById('t-name').value.trim(),
-      fromCountryId: document.getElementById('t-from').value,
-      toCountryId: document.getElementById('t-to').value,
-      hubs: document.getElementById('t-hubs').value.trim(),
-      capacity: document.getElementById('t-cap').value.trim()
-    };
-    transportData.push(newTr);
-    eventsData.unshift({
-      id: `tr-evt-${Date.now()}`,
-      year: simDate.year,
-      type: '外交條約',
-      severity: '一般',
-      region: newTr.hubs,
-      title: `🚆 新交通幹線「${newTr.name}」正式開通`,
-      content: `類型：${newTr.type}，設計運量：${newTr.capacity}。`
-    });
-    saveAll();
-    document.getElementById('transport-form').reset();
-    alert('🚆 交通路線已開通並同步顯示於地圖交通圖層！');
-  });
-
-  // 外交表單
-  document.getElementById('diplomacy-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const cA = document.getElementById('d-country-a').value;
-    const cB = document.getElementById('d-country-b').value;
-    if (cA === cB) return alert('⚠️ 請選擇兩個不同的國家！');
-    const status = document.getElementById('d-status').value;
-    const note = document.getElementById('d-note').value.trim();
-
-    diplomacyData.relations.unshift({ id: `rel-${Date.now()}`, countryA: cA, countryB: cB, status, note });
-    const nameA = countriesData.find(c => c.id === cA)?.name;
-    const nameB = countriesData.find(c => c.id === cB)?.name;
-    eventsData.unshift({
-      id: `dip-${Date.now()}`,
-      year: simDate.year,
-      type: '外交條約',
-      severity: '重大',
-      region: `${nameA} — ${nameB}`,
-      title: `🕊️ ${nameA} 與 ${nameB} 進入「${status}」`,
-      content: note
-    });
-    saveAll();
-    document.getElementById('diplomacy-form').reset();
-    alert('📜 外交公報已發布！');
-  });
-
-  // 事件篩選、手動通播與模擬播報
-  document.getElementById('event-filter-type').addEventListener('change', (e) => renderEventsFeed(e.target.value));
-  document.getElementById('trigger-auto-event-btn').addEventListener('click', () => {
-    generateAutoDisasterOrNews();
-    alert('⚡ 已模擬觸發一則最新自動地理通播 / 世界新聞！');
-  });
-
+  // 手動新聞通播（附帶股價連動）
   document.getElementById('event-publish-form').addEventListener('submit', (e) => {
     e.preventDefault();
+    const targetCountryId = document.getElementById('e-target-country').value;
+    const impact = Number(document.getElementById('e-market-impact').value);
+    let content = document.getElementById('e-content').value.trim();
+
+    if (targetCountryId && impact !== 0) {
+      const st = stocksData.find(s => s.countryId === targetCountryId);
+      if (st) {
+        st.prevPrice = st.price;
+        st.price = Math.max(5, Number((st.price * (1 + impact)).toFixed(2)));
+        content += `（股市連動：${st.ticker} ${impact > 0 ? '+' : ''}${(impact * 100).toFixed(0)}% ➔ $${st.price}）`;
+      }
+    }
+
     eventsData.unshift({
       id: `evt-${Date.now()}`,
       year: simDate.year,
@@ -929,14 +1078,17 @@ function setupEventListeners() {
       severity: document.getElementById('e-severity').value,
       region: document.getElementById('e-region').value.trim(),
       title: document.getElementById('e-title').value.trim(),
-      content: document.getElementById('e-content').value.trim()
+      content
     });
     saveAll();
     document.getElementById('event-publish-form').reset();
-    alert('📡 通播已發布！');
+    alert('📡 新聞已發布並同步影響股市！');
   });
 
-  // 其他輔助按鈕
+  // 其他按鈕事件
+  document.getElementById('event-filter-type').addEventListener('change', (e) => renderEventsFeed(e.target.value));
+  document.getElementById('trigger-auto-event-btn').addEventListener('click', () => triggerAutoNewsStation(false));
+  document.getElementById('drawer-portal-btn').addEventListener('click', () => { if (currentDrawerCountryId) openNationalPortal(currentDrawerCountryId); });
   document.getElementById('drawer-edit-btn').addEventListener('click', () => { if (currentDrawerCountryId) editCountry(currentDrawerCountryId); });
   document.getElementById('edit-country-selector').addEventListener('change', (e) => {
     if (e.target.value === 'NEW') openBuilderForNew();
@@ -957,10 +1109,26 @@ function setupEventListeners() {
   });
   document.getElementById('search-input').addEventListener('input', (e) => {
     const kw = e.target.value.toLowerCase();
-    renderCountriesGrid(countriesData.filter(c =>
-      c.name.toLowerCase().includes(kw) || c.owner.toLowerCase().includes(kw) || c.tags.some(t => t.toLowerCase().includes(kw))
-    ));
+    renderCountriesGrid(countriesData.filter(c => c.name.toLowerCase().includes(kw) || c.owner.toLowerCase().includes(kw) || c.tags.some(t => t.toLowerCase().includes(kw))));
     switchView('countries');
+  });
+  document.getElementById('transport-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    transportData.push({
+      id: `tr-${Date.now()}`, type: document.getElementById('t-type').value, name: document.getElementById('t-name').value.trim(),
+      fromCountryId: document.getElementById('t-from').value, toCountryId: document.getElementById('t-to').value,
+      hubs: document.getElementById('t-hubs').value.trim(), capacity: document.getElementById('t-cap').value.trim()
+    });
+    saveAll();
+    document.getElementById('transport-form').reset();
+  });
+  document.getElementById('diplomacy-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const cA = document.getElementById('d-country-a').value, cB = document.getElementById('d-country-b').value;
+    if (cA === cB) return alert('⚠️ 請選擇兩個不同的國家！');
+    diplomacyData.relations.unshift({ id: `rel-${Date.now()}`, countryA: cA, countryB: cB, status: document.getElementById('d-status').value, note: document.getElementById('d-note').value.trim() });
+    saveAll();
+    document.getElementById('diplomacy-form').reset();
   });
   document.getElementById('copy-json-btn').addEventListener('click', () => {
     navigator.clipboard.writeText(document.getElementById('json-output-box').textContent);
