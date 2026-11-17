@@ -1,86 +1,58 @@
 [
   {
-    "id": "star-federation",
-    "owner": "Captain Huang",
-    "name": "星辰聯邦",
-    "officialName": "星辰合眾聯邦共和國",
-    "code": "STF",
-    "flag": "🌟",
-    "color": "#38bdf8",
-    "capital": "星輝市",
-    "government": "聯邦制議會共和國",
-    "leader": "Captain Huang",
-    "population": 68500000,
-    "gdp": 1850000000000,
-    "currency": "星辰幣 (STC)",
-    "language": "通用星語、古星文",
-    "religion": "星辰自然信仰 (62%)、無宗教 (30%)",
-    "tags": ["聯邦", "科技強國", "星形大陸"],
-    "coords": { "lat": 24.5, "lon": -65.0 },
-    "maxTerritoryArea": 12000,
-    "territoryPoints": [
-      { "x": 26, "y": 30 },
-      { "x": 38, "y": 28 },
-      { "x": 40, "y": 44 },
-      { "x": 25, "y": 46 }
-    ],
-    "description": "位於星形大陸核心地帶的聯邦國家，以發達的軌道交通與航太工業聞名。",
-    "cities": ["星輝市 (首都)", "天樞港", "銀翼工業區"]
-  },
-  {
-    "id": "crescent-kingdom",
-    "owner": "admin",
-    "name": "新月王國",
-    "officialName": "新月聯合王國",
-    "code": "CRK",
-    "flag": "🌙",
-    "color": "#f59e0b",
-    "capital": "月影城",
-    "government": "君主立憲制",
-    "leader": "亞歷山大三世",
-    "population": 45000000,
-    "gdp": 980000000000,
-    "currency": "月銀盾 (MNS)",
-    "language": "新月語",
-    "religion": "月神教 (78%)",
-    "tags": ["島國", "海洋貿易", "君主立憲"],
-    "coords": { "lat": -12.0, "lon": 68.5 },
+    "id": "uup-3657",
+    "owner": "maxhuang0220@world",
+    "name": "烏托邦",
+    "officialName": "烏托邦共和國",
+    "code": "UUP",
+    "flag": "✈️",
+    "color": "#2561c1",
+    "capital": "烏托邦",
+    "government": "內閣制",
+    "leader": "海薩司．海富",
+    "population": 2311510,
+    "gdp": 425974681021,
+    "coords": {
+      "lat": 35.2,
+      "lon": -155
+    },
     "maxTerritoryArea": 10000,
     "territoryPoints": [
-      { "x": 63, "y": 48 },
-      { "x": 74, "y": 50 },
-      { "x": 72, "y": 64 },
-      { "x": 62, "y": 60 }
+      {
+        "x": 6.8,
+        "y": 29.9
+      },
+      {
+        "x": 9.5,
+        "y": 30.3
+      },
+      {
+        "x": 3.7,
+        "y": 34.5
+      },
+      {
+        "x": 4.9,
+        "y": 29.7
+      },
+      {
+        "x": 7.6,
+        "y": 36.5
+      },
+      {
+        "x": 6.5,
+        "y": 37.9
+      }
     ],
-    "description": "由群島組成的海洋貿易王國，掌握著世界主要的海上航線與深水港口。",
-    "cities": ["月影城 (首都)", "潮汐港", "白銀灣"]
-  },
-  {
-    "id": "emerald-republic",
-    "owner": "Elena",
-    "name": "翡翠共和國",
-    "officialName": "翡翠自由共和國",
-    "code": "EMR",
-    "flag": "🌿",
-    "color": "#10b981",
-    "capital": "森之都",
-    "government": "總統制共和國",
-    "leader": "艾琳娜·林",
-    "population": 35000000,
-    "gdp": 590000000000,
-    "currency": "翠葉元 (EML)",
-    "language": "森語、通用星語",
-    "religion": "自然精靈信仰 (55%)",
-    "tags": ["多語言國家", "生態能源", "農業大國"],
-    "coords": { "lat": -38.0, "lon": -10.5 },
-    "maxTerritoryArea": 10000,
-    "territoryPoints": [
-      { "x": 42, "y": 65 },
-      { "x": 54, "y": 66 },
-      { "x": 53, "y": 79 },
-      { "x": 41, "y": 77 }
+    "currency": "烏托邦元(UC)",
+    "language": "安夕塔語",
+    "religion": "道教",
+    "cities": [
+      "烏托邦市",
+      "鳳凰城"
     ],
-    "description": "擁有廣袤原始森林與豐富自然資源的國家，致力於再生能源與生態保護。",
-    "cities": ["森之都 (首都)", "翡翠谷", "綠洲鎮"]
+    "tags": [
+      "民主、內閣"
+    ],
+    "description": "(編寫中...)"
   }
 ]
