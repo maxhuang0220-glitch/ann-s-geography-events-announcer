@@ -4,10 +4,11 @@ let eventsData = [];
 let transportData = [];
 let diplomacyData = { relations: [], organizations: [] };
 
-// 股票市場與玩家資金狀態
-let stocksData = []; // [{ ticker, name, countryId, price, prevPrice, volume }]
+// 股票市場與玩家資金狀態（含歷史價格陣列 history 供折線圖繪製）
+let stocksData = []; // [{ ticker, name, countryId, price, prevPrice, volume, history: [p1, p2, ...] }]
 let stockLogs = [];
 let playerPortfolio = { cash: 100000, holdings: {} };
+let selectedChartTicker = '';
 
 // 聯合國大會聊天室 & 決議案狀態
 let unMessages = [];
@@ -22,7 +23,7 @@ const MS_PER_SIM_DAY = 30 * 60 * 1000; // 現實 30 分鐘 = 虛擬 1 天
 const AUTO_NEWS_INTERVAL_MS = 30 * 1000; // 0.5 分鐘 = 30 秒刷新一則新聞
 let simDate = { year: 2028, month: 1, day: 1, dayProgress: 0 };
 let flowSpeed = 1;
-let speedOffsetMs = 0; // 用於管理員/本機切換倍速時維持無縫接軌
+let speedOffsetMs = 0;
 let speedAnchorRealMs = Date.now();
 let flowTimer = null;
 let newsTimer = null;
@@ -81,9 +82,10 @@ async function initWorld() {
       }
     });
 
-    // 初始化股票市場
+    // 初始化股票市場（確保每檔股票都有 history 歷史走勢陣列）
     stocksData = JSON.parse(localStorage.getItem(KEYS.STOCKS)) || generateInitialStocks();
     syncStocksWithCountries();
+    if (stocksData.length > 0) selectedChartTicker = stocksData[0].ticker;
     playerPortfolio = JSON.parse(localStorage.getItem(KEYS.PORTFOLIO)) || { cash: 100000, holdings: {} };
 
     // 初始化聯合國大會聊天室與決議案
@@ -164,13 +166,11 @@ function syncStandardWorldTime(isInitial = false) {
   const epochStartMs = Date.parse(worldData.epochStartISO || '2026-11-17T00:00:00Z');
   const baseDate = worldData.epochWorldDate || { year: 2028, month: 1, day: 1 };
 
-  // 從創世基準點到現在的真實 UTC 總毫秒數 + 流速偏移
   const totalWorldRealMs = Math.max(0, (Date.now() - epochStartMs) + getAccumulatedElapsedMs() - (Date.now() - speedAnchorRealMs));
   const exactTotalSimDays = totalWorldRealMs / MS_PER_SIM_DAY;
   const wholeSimDays = Math.floor(exactTotalSimDays);
   const dayProgress = exactTotalSimDays - wholeSimDays;
 
-  // 將總虛擬天數換算為 年 / 月 / 日 (每月固定 30 天，每年 360 天)
   const baseTotalDays = (baseDate.year * 360) + ((baseDate.month - 1) * 30) + (baseDate.day - 1);
   const currentTotalDays = baseTotalDays + wholeSimDays;
 
@@ -204,7 +204,7 @@ function startFlowTimeLoop() {
   }, 1000);
 }
 
-// 獨立定時器：每 0.5 分鐘（30 秒）自動刷新一則新聞（對齊全球標準時間的 :00 與 :30 秒）
+// 獨立定時器：每 0.5 分鐘（30 秒）自動刷新一則新聞
 function startAutoNewsLoop() {
   if (newsTimer) clearInterval(newsTimer);
   newsTimer = setInterval(() => {
@@ -220,7 +220,16 @@ function updateClockUI() {
   document.getElementById('world-clock-display').textContent = `🌐 ${simDate.year}年 ${m}月 ${d}日 (${pct}%)`;
 }
 
-// 24H 自動新聞台：好壞消息均衡，直接連動影響該國股價
+// 記錄股價歷史點並限制最多保留 35 個數據點
+function recordStockPricePoint(stock, newPrice) {
+  stock.prevPrice = stock.price;
+  stock.price = Math.max(5, Number(newPrice.toFixed(2)));
+  if (!Array.isArray(stock.history)) stock.history = [stock.prevPrice];
+  stock.history.push(stock.price);
+  if (stock.history.length > 35) stock.history.shift();
+}
+
+// 24H 自動新聞台：好壞消息均衡，直接連動影響該國股價與折線圖
 function triggerAutoNewsStation() {
   if (countriesData.length === 0) return;
   const target = countriesData[Math.floor(Math.random() * countriesData.length)];
@@ -287,8 +296,7 @@ function triggerAutoNewsStation() {
 
   let stockNote = '';
   if (stock) {
-    stock.prevPrice = stock.price;
-    stock.price = Math.max(5, Number((stock.price * (1 + impactPct)).toFixed(2)));
+    recordStockPricePoint(stock, stock.price * (1 + impactPct));
     const sign = impactPct > 0 ? '+' : '';
     const pctStr = `${sign}${(impactPct * 100).toFixed(2)}%`;
     stockNote = `（股市即時反應：${stock.ticker} ${pctStr} ➔ $${stock.price.toFixed(2)}）`;
@@ -320,30 +328,45 @@ function triggerAutoNewsStation() {
 }
 
 // ==========================================
-// 2. 全球股票系統 (玩家買賣 + 系統虛擬買家 AI)
+// 2. 全球股票系統 (含 SVG 折線圖 + 虛擬買家 AI)
 // ==========================================
 function generateInitialStocks() {
-  return countriesData.map(c => ({
-    ticker: `${c.code}.WSE`,
-    name: `${c.name}國家控股集團`,
-    countryId: c.id,
-    price: Number((80 + Math.random() * 120).toFixed(2)),
-    prevPrice: 100,
-    volume: 15000
-  }));
+  return countriesData.map(c => {
+    const base = Number((90 + Math.random() * 80).toFixed(2));
+    // 預先產生 12 筆開盤歷史波動點，讓折線圖一打開就有豐富走勢
+    const history = [base];
+    let cur = base;
+    for (let i = 0; i < 11; i++) {
+      cur = Math.max(10, Number((cur * (1 + (Math.random() - 0.48) * 0.03)).toFixed(2)));
+      history.push(cur);
+    }
+    return {
+      ticker: `${c.code}.WSE`,
+      name: `${c.name}國家控股集團`,
+      countryId: c.id,
+      price: cur,
+      prevPrice: history[history.length - 2],
+      volume: 15000,
+      history
+    };
+  });
 }
 
 function syncStocksWithCountries() {
   countriesData.forEach(c => {
-    if (!stocksData.some(s => s.countryId === c.id)) {
+    const existing = stocksData.find(s => s.countryId === c.id);
+    if (!existing) {
       stocksData.push({
         ticker: `${c.code}.WSE`,
         name: `${c.name}國家開發集團`,
         countryId: c.id,
         price: 100.00,
         prevPrice: 100.00,
-        volume: 5000
+        volume: 5000,
+        history: [98.5, 99.2, 100.0]
       });
+    } else if (!Array.isArray(existing.history) || existing.history.length < 2) {
+      existing.history = [existing.prevPrice || existing.price, existing.price];
     }
   });
 }
@@ -360,8 +383,7 @@ function startVirtualBuyersLoop() {
     const shares = Math.floor(Math.random() * 80) + 10;
 
     const deltaPct = (isBuy ? 1 : -1) * (0.002 + Math.random() * 0.01);
-    targetStock.prevPrice = targetStock.price;
-    targetStock.price = Math.max(5, Number((targetStock.price * (1 + deltaPct)).toFixed(2)));
+    recordStockPricePoint(targetStock, targetStock.price * (1 + deltaPct));
     targetStock.volume += shares;
 
     stockLogs.unshift({
@@ -380,6 +402,101 @@ function startVirtualBuyersLoop() {
   }, 4000);
 }
 
+function selectChartStock(ticker) {
+  selectedChartTicker = ticker;
+  const chartSelect = document.getElementById('chart-stock-select');
+  if (chartSelect) chartSelect.value = ticker;
+  const tradeSelect = document.getElementById('trade-stock-select');
+  if (tradeSelect) tradeSelect.value = ticker;
+  renderStockLineChart();
+}
+
+// 繪製 SVG 動態股價走勢折線圖
+function renderStockLineChart() {
+  const svg = document.getElementById('stock-line-chart');
+  const hud = document.getElementById('chart-stats-hud');
+  if (!svg || stocksData.length === 0) return;
+
+  const stock = stocksData.find(s => s.ticker === selectedChartTicker) || stocksData[0];
+  selectedChartTicker = stock.ticker;
+  const pts = stock.history && stock.history.length >= 2 ? stock.history : [stock.prevPrice, stock.price];
+
+  const minVal = Math.min(...pts);
+  const maxVal = Math.max(...pts);
+  const range = Math.max(1, maxVal - minVal);
+  const padMin = minVal - range * 0.12;
+  const padMax = maxVal + range * 0.12;
+  const padRange = padMax - padMin;
+
+  const firstPrice = pts[0];
+  const lastPrice = pts[pts.length - 1];
+  const isGain = lastPrice >= firstPrice;
+  const strokeColor = isGain ? '#10b981' : '#ef4444';
+  const fillColor = isGain ? 'rgba(16, 185, 129, 0.18)' : 'rgba(239, 68, 68, 0.18)';
+
+  if (hud) {
+    const totalDiff = lastPrice - firstPrice;
+    const totalPct = ((totalDiff / firstPrice) * 100).toFixed(2);
+    hud.innerHTML = `
+      目前報價：<strong style="color:${strokeColor}; font-size:1rem;">$${lastPrice.toFixed(2)}</strong>
+      (${isGain ? '+' : ''}${totalPct}%) ｜
+      區間最高：<span style="color:#f8fafc;">$${maxVal.toFixed(2)}</span> ｜
+      區間最低：<span style="color:#f8fafc;">$${minVal.toFixed(2)}</span>
+    `;
+  }
+
+  const W = 800;
+  const H = 220;
+  const leftMargin = 58;
+  const rightMargin = 20;
+  const topMargin = 16;
+  const bottomMargin = 24;
+  const plotW = W - leftMargin - rightMargin;
+  const plotH = H - topMargin - bottomMargin;
+
+  // 水平格線與左側價格刻度 (4 條基準線)
+  let gridHTML = '';
+  for (let i = 0; i <= 3; i++) {
+    const ratio = i / 3;
+    const y = topMargin + plotH * ratio;
+    const priceLabel = (padMax - padRange * ratio).toFixed(2);
+    gridHTML += `
+      <line x1="${leftMargin}" y1="${y}" x2="${W - rightMargin}" y2="${y}" stroke="rgba(148, 163, 184, 0.16)" stroke-dasharray="4,4" />
+      <text x="${leftMargin - 8}" y="${y + 4}" fill="#94a3b8" font-size="11" text-anchor="end" font-family="monospace">$${priceLabel}</text>
+    `;
+  }
+
+  // 計算每個價格點在 SVG 上的 (x, y) 座標
+  const coords = pts.map((val, idx) => {
+    const x = leftMargin + (idx / (pts.length - 1)) * plotW;
+    const y = topMargin + ((padMax - val) / padRange) * plotH;
+    return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)), val };
+  });
+
+  const linePointsStr = coords.map(c => `${c.x},${c.y}`).join(' ');
+  const areaPointsStr = `${coords[0].x},${topMargin + plotH} ${linePointsStr} ${coords[coords.length - 1].x},${topMargin + plotH}`;
+
+  // 節點圓點與最新價格標籤
+  const dotsHTML = coords.map((c, idx) => {
+    const isLast = idx === coords.length - 1;
+    return `<circle cx="${c.x}" cy="${c.y}" r="${isLast ? 4.5 : 2.5}" fill="${isLast ? '#fff' : strokeColor}" stroke="${strokeColor}" stroke-width="2" />`;
+  }).join('');
+
+  const lastCoord = coords[coords.length - 1];
+  const latestTagHTML = `
+    <rect x="${Math.min(W - 72, lastCoord.x - 28)}" y="${Math.max(2, lastCoord.y - 22)}" width="62" height="17" rx="4" fill="${strokeColor}" />
+    <text x="${Math.min(W - 41, lastCoord.x + 3)}" y="${Math.max(14, lastCoord.y - 10)}" fill="#0f172a" font-size="10.5" font-weight="bold" text-anchor="middle" font-family="monospace">$${lastCoord.val.toFixed(2)}</text>
+  `;
+
+  svg.innerHTML = `
+    ${gridHTML}
+    <polygon points="${areaPointsStr}" fill="${fillColor}" />
+    <polyline points="${linePointsStr}" fill="none" stroke="${strokeColor}" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round" />
+    ${dotsHTML}
+    ${latestTagHTML}
+  `;
+}
+
 function renderStocksMarket() {
   const listEl = document.getElementById('stocks-market-list');
   if (!listEl) return;
@@ -389,9 +506,10 @@ function renderStocksMarket() {
     const diff = st.price - st.prevPrice;
     const pct = st.prevPrice ? ((diff / st.prevPrice) * 100).toFixed(2) : '0.00';
     const isUp = diff >= 0;
+    const isSelected = st.ticker === selectedChartTicker;
 
     return `
-      <div class="stock-row">
+      <div class="stock-row" onclick="selectChartStock('${st.ticker}')" style="cursor:pointer; ${isSelected ? 'border-color: var(--accent); background: rgba(56, 189, 248, 0.08);' : ''}">
         <div>
           <strong>${c ? c.flag : '🏢'} ${st.name}</strong>
           <span class="event-tag" style="margin-left:6px;">${st.ticker}</span>
@@ -406,6 +524,8 @@ function renderStocksMarket() {
       </div>
     `;
   }).join('');
+
+  renderStockLineChart();
 
   document.getElementById('player-cash').textContent = `$${playerPortfolio.cash.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   let portVal = 0;
@@ -752,9 +872,16 @@ function populateCountryDropdowns() {
     editableCountries.map(c => `<option value="${c.id}">✏️ 編輯：${c.flag} ${c.name}</option>`).join('');
   document.getElementById('draw-target-country').innerHTML = editableCountries.map(c => `<option value="${c.id}">${c.flag} ${c.name}</option>`).join('');
 
-  document.getElementById('trade-stock-select').innerHTML = stocksData.map(s =>
+  const stockOptions = stocksData.map(s =>
     `<option value="${s.ticker}">${s.ticker} - ${s.name} ($${s.price.toFixed(2)})</option>`
   ).join('');
+  document.getElementById('trade-stock-select').innerHTML = stockOptions;
+
+  const chartSelect = document.getElementById('chart-stock-select');
+  if (chartSelect) {
+    chartSelect.innerHTML = stockOptions;
+    if (selectedChartTicker) chartSelect.value = selectedChartTicker;
+  }
 }
 
 function openCountryWiki(countryId) {
@@ -839,13 +966,17 @@ function setupEventListeners() {
     });
   });
 
-  // 跨機標準時間流速切換（保留目前累積進度並切換倍速）
+  // 折線圖股票切換下拉選單
+  document.getElementById('chart-stock-select').addEventListener('change', (e) => {
+    selectChartStock(e.target.value);
+  });
+
+  // 跨機標準時間流速切換
   document.querySelectorAll('.flow-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.flow-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
 
-      // 先結算目前這一階段累積的流速偏移量
       speedOffsetMs = getAccumulatedElapsedMs();
       speedAnchorRealMs = Date.now();
       flowSpeed = Number(btn.dataset.speed);
@@ -874,17 +1005,16 @@ function setupEventListeners() {
       if (playerPortfolio.cash < totalCost) return alert('❌ 可用資金不足！');
       playerPortfolio.cash -= totalCost;
       playerPortfolio.holdings[ticker] = currentOwned + shares;
-      stock.prevPrice = stock.price;
-      stock.price = Number((stock.price * (1 + Math.min(0.05, shares * 0.0005))).toFixed(2));
+      recordStockPricePoint(stock, stock.price * (1 + Math.min(0.05, shares * 0.0005)));
     } else {
       if (currentOwned < shares) return alert('❌ 持有股數不足！');
       playerPortfolio.cash += totalCost;
       playerPortfolio.holdings[ticker] = currentOwned - shares;
-      stock.prevPrice = stock.price;
-      stock.price = Math.max(5, Number((stock.price * (1 - Math.min(0.05, shares * 0.0005))).toFixed(2)));
+      recordStockPricePoint(stock, stock.price * (1 - Math.min(0.05, shares * 0.0005)));
     }
 
     stock.volume += shares;
+    selectedChartTicker = ticker;
     stockLogs.unshift({
       time: new Date().toLocaleTimeString(),
       actor: `🎮 ${currentUser.username}`,
@@ -1102,8 +1232,7 @@ function setupEventListeners() {
     if (targetCountryId && impact !== 0) {
       const st = stocksData.find(s => s.countryId === targetCountryId);
       if (st) {
-        st.prevPrice = st.price;
-        st.price = Math.max(5, Number((st.price * (1 + impact)).toFixed(2)));
+        recordStockPricePoint(st, st.price * (1 + impact));
         content += `（股市連動：${st.ticker} ${impact > 0 ? '+' : ''}${(impact * 100).toFixed(0)}% ➔ $${st.price}）`;
       }
     }
