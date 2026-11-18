@@ -188,13 +188,29 @@
         </div>
       </section>
 
-      <!-- 視圖 3：全球股票交易所 (玩家買賣 + 虛擬買家 AI) -->
+      <!-- 視圖 3：全球股票交易所 (含即時股價折線圖) -->
       <section id="view-stocks" class="view">
         <div class="view-header">
           <h2>📈 全球證券交易所 (World Stock Exchange)</h2>
           <div class="wallet-hud">
             <span>💰 可用資金：<strong id="player-cash" style="color:var(--success);">$100,000</strong></span>
             <span style="margin-left:14px;">📊 持股總值：<strong id="player-portfolio-val" style="color:var(--accent);">$0</strong></span>
+          </div>
+        </div>
+
+        <!-- 互動股價走勢折線圖面板 -->
+        <div class="panel" style="margin-bottom: 20px;">
+          <div class="view-header" style="margin-bottom: 10px;">
+            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+              <h3 style="margin:0;">📊 即時股價走勢折線圖</h3>
+              <select id="chart-stock-select" class="select-input"></select>
+            </div>
+            <div id="chart-stats-hud" style="font-size:0.85rem; color:var(--text-muted); font-family:monospace;">
+              載入行情中...
+            </div>
+          </div>
+          <div style="background: var(--bg-dark); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
+            <svg id="stock-line-chart" viewBox="0 0 800 220" style="width:100%; height:220px; display:block; overflow:visible;"></svg>
           </div>
         </div>
 
@@ -205,6 +221,7 @@
               <h3>🏢 各國掛牌企業即時行情</h3>
               <span class="badge-flow">🤖 虛擬買家 AI 撮合中</span>
             </div>
+            <p class="hint" style="margin-top:0; margin-bottom:10px;">💡 點擊任一股票可切換上方走勢折線圖</p>
             <div id="stocks-market-list" class="events-feed"></div>
           </div>
 
@@ -246,11 +263,10 @@
         </div>
       </section>
 
-      <!-- 視圖 4：聯合國大會制度 (即時聊天室 + 決議投票) -->
+      <!-- 視圖 4：聯合國大會制度 -->
       <section id="view-un" class="view">
         <h2>🏛️ 聯合國大會 (UN General Assembly 議事廳)</h2>
         <div class="builder-layout">
-          <!-- 左側：即時議事聊天室 -->
           <div class="panel" style="display:flex; flex-direction:column; height:600px;">
             <div class="view-header">
               <h3>💬 各國代表即時辯論大廳</h3>
@@ -263,7 +279,6 @@
             </form>
           </div>
 
-          <!-- 右側：聯合國決議案與各國投票系統 -->
           <div class="panel">
             <h3>📜 聯合國大會決議案投票</h3>
             <form id="un-proposal-form" class="builder-form" style="margin-bottom:18px; padding-bottom:16px; border-bottom:1px solid var(--border);">
