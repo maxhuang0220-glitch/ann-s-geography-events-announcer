@@ -1,3 +1,12 @@
+// ==========================================
+// ☁️ 全服雲端自動儲存設定 (JSONBin.io)
+// 填入你的 BIN_ID 與 API_KEY 後，所有玩家資料將自動雲端儲存並跨裝置即時同步！
+// ==========================================
+const CLOUD_CONFIG = {
+  BIN_ID: '6afdba8aac6210605a91eb80',
+  API_KEY: '$2a$10$ew.hZs85AT40frZdjdtZJeqgpM35jIlI.mQNGpOuYPO.db4QGtu6O'
+};
+
 let worldData = {};
 let countriesData = [];
 let eventsData = [];
@@ -5,10 +14,10 @@ let pendingNewsData = [];
 let transportData = [];
 let diplomacyData = { relations: [], organizations: [] };
 
-// 股票市場與玩家資金狀態（history 完整儲存所有歷史價格紀錄）
+// 股票市場與玩家資金狀態
 let stocksData = [];
 let stockLogs = [];
-let playerPortfolio = { cash: 100000, holdings: {} };
+let allPortfolios = {}; // { [username]: { cash: 100000, holdings: {} } } 雲端儲存所有玩家的資金與持股
 let selectedChartTicker = '';
 let chartShowAllHistory = true;
 
@@ -21,41 +30,168 @@ let currentUser = null;
 let registeredPlayers = [];
 
 // 跨機標準時間與確定性同步參數
-const MS_PER_SIM_DAY = 30 * 60 * 1000; // 現實 30 分鐘 = 虛擬 1 天
-const AUTO_NEWS_INTERVAL_MS = 30 * 1000; // 0.5 分鐘 = 30 秒全球同步刷新一則新聞與股價
+const MS_PER_SIM_DAY = 30 * 60 * 1000;
+const AUTO_NEWS_INTERVAL_MS = 30 * 1000;
 const MAX_PLAYER_STOCKS = 10;
 
 let simDate = { year: 2028, month: 1, day: 1, dayProgress: 0 };
 let flowSpeed = 1;
 let speedOffsetMs = 0;
 let speedAnchorRealMs = Date.now();
-let flowTimer = null;
 let syncLoopTimer = null;
+let cloudPullTimer = null;
 let lastSyncedTickSlot = 0;
 let lastProcessedTotalSimDays = -1;
+let lastCloudUpdatedAt = 0;
+let isCloudSyncing = false;
 
 let currentMapLayer = 'political';
 let isDrawMode = false;
 let tempPolygonPoints = [];
 let currentDrawerCountryId = null;
 
-const KEYS = {
-  COUNTRIES: 'vw_v5_countries',
-  CUSTOM_EVENTS: 'vw_v5_custom_events',
-  PENDING_NEWS: 'vw_v5_pending_news',
-  TRANSPORT: 'vw_v5_transport',
-  DIPLOMACY: 'vw_v5_diplomacy',
-  CUSTOM_STOCKS: 'vw_v5_custom_stocks',
-  PORTFOLIO: 'vw_v5_portfolio',
-  UN_MSG: 'vw_v5_un_msg',
-  UN_PROP: 'vw_v5_un_prop',
-  PLAYERS: 'vw_v5_players',
-  SESSION: 'vw_v5_session'
-};
+// 本地永久備份鍵名（即使網頁改版升級也保留舊版資料自動遷移）
+const STORAGE_BACKUP_KEY = 'vw_persistent_world_state_v1';
+const SESSION_KEY = 'vw_current_login_session';
+
+// ==========================================
+// ☁️ 雲端自動儲存與拉取核心引擎
+// ==========================================
+function isCloudEnabled() {
+  return (
+    CLOUD_CONFIG.BIN_ID &&
+    !CLOUD_CONFIG.BIN_ID.includes('請在此貼上') &&
+    CLOUD_CONFIG.API_KEY &&
+    !CLOUD_CONFIG.API_KEY.includes('請在此貼上')
+  );
+}
+
+function buildPersistPayload() {
+  const customStocks = stocksData
+    .filter(s => s.isCustom)
+    .map(s => ({
+      ticker: s.ticker,
+      name: s.name,
+      countryId: s.countryId,
+      owner: s.owner,
+      ipoPrice: s.ipoPrice || s.price,
+      volume: s.volume,
+      isCustom: true
+    }));
+
+  const customEvents = eventsData.filter(e => e.isCustom);
+
+  return {
+    updatedAt: Date.now(),
+    countriesData,
+    customEvents,
+    pendingNewsData,
+    transportData,
+    diplomacyData,
+    customStocks,
+    allPortfolios,
+    unMessages,
+    unProposals,
+    registeredPlayers
+  };
+}
+
+function applyPersistedState(state, defCountries, defEvents, defTransport, defDiplomacy) {
+  if (!state || typeof state !== 'object') return;
+  if (Array.isArray(state.countriesData) && state.countriesData.length > 0) {
+    countriesData = state.countriesData;
+  } else if (defCountries) {
+    countriesData = defCountries;
+  }
+
+  pendingNewsData = Array.isArray(state.pendingNewsData) ? state.pendingNewsData : pendingNewsData;
+  transportData = Array.isArray(state.transportData) ? state.transportData : (defTransport || transportData);
+  diplomacyData = state.diplomacyData && state.diplomacyData.relations ? state.diplomacyData : (defDiplomacy || diplomacyData);
+  allPortfolios = state.allPortfolios && typeof state.allPortfolios === 'object' ? state.allPortfolios : allPortfolios;
+  unMessages = Array.isArray(state.unMessages) && state.unMessages.length > 0 ? state.unMessages : unMessages;
+  unProposals = Array.isArray(state.unProposals) && state.unProposals.length > 0 ? state.unProposals : unProposals;
+  registeredPlayers = Array.isArray(state.registeredPlayers) && state.registeredPlayers.length > 0 ? state.registeredPlayers : registeredPlayers;
+
+  if (state.updatedAt) lastCloudUpdatedAt = state.updatedAt;
+
+  // 確保每個國家都有官網物件
+  countriesData.forEach(c => {
+    if (!c.website) {
+      c.website = {
+        theme: 'cyber',
+        slogan: `歡迎來到${c.officialName} — 榮耀與繁榮之地`,
+        notice: `${c.capital}市政廳發布最新年度發展白皮書。`,
+        culture: `${c.name}擁有獨特的${c.language}文化傳統與壯麗自然景觀，誠摯歡迎世界各國使節與旅客造訪。`
+      };
+    }
+  });
+
+  // 重建全服同步股票與新聞（並注入玩家自訂股票與管理員核准新聞）
+  rebuildGlobalSyncedMarketAndNews(
+    countriesData,
+    defEvents || [],
+    state.customStocks || [],
+    state.customEvents || []
+  );
+}
+
+// 背景自動上傳所有使用者資料到雲端（防洗掉保護）
+async function pushStateToCloud(payload) {
+  if (!isCloudEnabled() || isCloudSyncing) return;
+  isCloudSyncing = true;
+  updateCloudBadge('☁️ 雲端儲存中...');
+  try {
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${CLOUD_CONFIG.BIN_ID}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Master-Key': CLOUD_CONFIG.API_KEY
+      },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      lastCloudUpdatedAt = payload.updatedAt;
+      updateCloudBadge('☁️ 雲端已同步');
+    } else {
+      updateCloudBadge('⚠️ 雲端寫入異常');
+    }
+  } catch (e) {
+    console.warn('雲端上傳失敗，已保存在本地安全快取：', e);
+    updateCloudBadge('⚠️ 離線本地備份');
+  } finally {
+    isCloudSyncing = false;
+  }
+}
+
+// 從雲端拉取最新全服資料
+async function pullStateFromCloud(isInitial = false) {
+  if (!isCloudEnabled() || isCloudSyncing) return null;
+  try {
+    const res = await fetch(`https://api.jsonbin.io/v3/b/${CLOUD_CONFIG.BIN_ID}/latest`, {
+      headers: { 'X-Master-Key': CLOUD_CONFIG.API_KEY }
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const record = data.record;
+    if (record && record.updatedAt && (isInitial || record.updatedAt > lastCloudUpdatedAt)) {
+      updateCloudBadge('☁️ 雲端已同步');
+      return record;
+    }
+    updateCloudBadge('☁️ 雲端已同步');
+  } catch (e) {
+    if (isInitial) updateCloudBadge('⚠️ 單機備份模式');
+  }
+  return null;
+}
+
+function updateCloudBadge(text) {
+  const el = document.getElementById('world-clock-display');
+  if (!el) return;
+  el.title = text;
+}
 
 // ==========================================
 // 跨機確定性隨機數產生器 (Mulberry32 PRNG)
-// 保證所有裝置在同一全球時間槽算出的新聞與股價 100% 一致
 // ==========================================
 function createSeededRandom(seed) {
   let a = seed >>> 0;
@@ -78,28 +214,25 @@ function hashStringToSeed(str) {
 }
 
 // ==========================================
-// 70 種新聞事件模板庫 (含 1 則超級大漲 + 1 則史詩崩盤 + 多層次微幅/中性波動)
+// 70 種新聞事件模板庫
 // ==========================================
 function build70NewsTemplates() {
   const templates = [];
 
-  // 【1】唯一 1 則：超級大漲 (+25% ~ +35%)
   templates.push({
     type: '超級大漲', sev: '緊急', minImp: 0.25, maxImp: 0.35,
     titleFn: (c) => `🚀 【超級大漲】${c.name}宣布「跨維度零點能源反應爐」商業化成功！`,
     contentFn: (c) => `【GNN 全球頭條】${c.name}皇家科學院在${c.capital}正式點亮全球首座零成本清潔能源核心，全球主權基金瘋狂掃貨，該國股價迎來史詩級暴漲！`
   });
 
-  // 【2】唯一 1 則：史詩崩盤 (-28% ~ -38%)
   templates.push({
     type: '史詩崩盤', sev: '緊急', minImp: -0.38, maxImp: -0.28,
     titleFn: (c) => `💥 【史詩崩盤】${c.name}中央清算銀行遭量子駭客癱瘓，金融體系爆發恐慌拋售！`,
     contentFn: (c) => `【GNN 紅色警報】${c.capital}證券與外匯清算系統突發大規模熔斷，流動性瞬間枯竭，市場出現不計代價的恐慌性崩盤抛售！`
   });
 
-  // 【3~12】10 則：強勁利多 (+6% ~ +11%)
   const strongBullTopics = [
-    ['發現全球最大深海稀土與氦-3礦脈', '探勘船隊傳回捷報，未來三十年戰略資源自給自足無虞'],
+    ['發現全球最大深海稀土與氦-3礦脈', '探勘船隊傳回捷報，未來三十年戰略資源自給無虞'],
     ['與三大星際貿易聯盟簽署零關稅自由貿易協定', '出口訂單預期將呈現倍數級成長'],
     ['新一代反重力磁浮貨運網全線貫通', '跨國物流成本驟降六成，企業獲利大幅上修'],
     ['主權財富基金宣布啟動千億級股票庫藏股回購', '強力護盤決心激勵外資機構大舉加碼'],
@@ -118,7 +251,6 @@ function build70NewsTemplates() {
     });
   });
 
-  // 【13~22】10 則：強勁利空 (-6% ~ -11%)
   const strongBearTopics = [
     ['近海發生規模 7.1 強震，主要工業園區暫時停工檢修', '基礎設施受損引發供應鏈斷鏈擔憂'],
     ['超級氣旋風暴正面登陸沿海港口，海運航線全面停航', '進出口貿易被迫中斷，航運與製造股承壓'],
@@ -139,7 +271,6 @@ function build70NewsTemplates() {
     });
   });
 
-  // 【23~34】12 則：溫和利多 (+2% ~ +5%)
   const mildBullTopics = [
     '季度零售銷售數據優於市場分析師預期',
     '觀光局統計入境國際旅客人次較去年同期成長 18%',
@@ -162,7 +293,6 @@ function build70NewsTemplates() {
     });
   });
 
-  // 【35~46】12 則：溫和利空 (-2% ~ -5%)
   const mildBearTopics = [
     '季度出口訂單增速略低於市場先前樂觀預估',
     '國際大宗商品價格上漲墊高企業營運成本',
@@ -185,7 +315,6 @@ function build70NewsTemplates() {
     });
   });
 
-  // 【47~58】12 則：極微幅震盪 (-1.2% ~ +1.2%)
   const microMoveTopics = [
     '證券交易所完成例行性交易主機軟體升級',
     '財政部公布上月稅收統計符合年度預算進度',
@@ -208,7 +337,6 @@ function build70NewsTemplates() {
     });
   });
 
-  // 【59~70】12 則：完全中性 / 0% 無股價影響
   const zeroImpactTopics = [
     '首都國家美術館舉辦「星海與古典」跨國藝術特展',
     '全國青少年交響樂團在音樂廳舉行年度慈善公演',
@@ -261,12 +389,10 @@ function formatSimDateFromTickSlot(tickSlot) {
   return { year, dateStr: `${year}/${month}/${day} UTC` };
 }
 
-// 依據全球統一的「創世基準點 + 時間槽編號」演算單一 Tick 的新聞與全市場股價變動
-function simulateDeterministicGlobalTick(tickSlot, baseCountries, stockMap, allStockList, generatedEvents, generatedLogs, recordAllPoints = true) {
+function simulateDeterministicGlobalTick(tickSlot, baseCountries, allStockList, generatedEvents, generatedLogs, recordAllPoints = true) {
   const rng = createSeededRandom(hashStringToSeed(`VW-GLOBAL-TICK-${worldData.epochStartISO}-${tickSlot}`));
   const dateInfo = formatSimDateFromTickSlot(tickSlot);
 
-  // 1. 全體掛牌股票的全球同步市場撮合波動（所有玩家同一秒看到完全一致的 AI 買賣與報價）
   const virtualFunds = ['🤖 星際主權基金', '🤖 量子避險資本', '🤖 遠洋貿易銀行', '🤖 散戶自動交易程式', '🤖 皇家退休基金'];
   allStockList.forEach(st => {
     const isBuy = rng() < 0.505;
@@ -290,7 +416,6 @@ function simulateDeterministicGlobalTick(tickSlot, baseCountries, stockMap, allS
     }
   });
 
-  // 2. 每 0.5 分鐘（每個 Tick）全球同步播報一則確定性新聞，並連動影響對應國家股票
   if (baseCountries.length > 0) {
     const target = baseCountries[Math.floor(rng() * baseCountries.length)];
     const countryStocks = allStockList.filter(s => s.countryId === target.id);
@@ -343,10 +468,8 @@ function simulateDeterministicGlobalTick(tickSlot, baseCountries, stockMap, allS
   }
 }
 
-// 重建截至當前全球 UTC 時間槽的完整同步新聞與股價歷史（讓所有玩家進入即同步）
-function rebuildGlobalSyncedMarketAndNews(baseCountries, defaultEvents) {
+function rebuildGlobalSyncedMarketAndNews(baseCountries, defaultEvents, customStocksList = [], customEventsList = []) {
   const currentSlot = getCurrentGlobalTickSlot();
-  // 最多回溯最近 240 個全球同步時間槽（約 2 小時完整歷史軌跡），確保載入瞬間完成且所有玩家一致
   const historyWindowSlots = 240;
   const startSlot = Math.max(1, currentSlot - historyWindowSlots);
 
@@ -358,46 +481,55 @@ function rebuildGlobalSyncedMarketAndNews(baseCountries, defaultEvents) {
       name: `${c.name}國家控股集團`,
       countryId: c.id,
       owner: c.owner || 'SYSTEM',
+      ipoPrice,
       price: ipoPrice,
       prevPrice: ipoPrice,
       volume: 15000,
+      isCustom: false,
       history: [ipoPrice]
     };
   });
 
-  // 合併玩家自訂上市的股票
-  const customStocks = JSON.parse(localStorage.getItem(KEYS.CUSTOM_STOCKS)) || [];
-  customStocks.forEach(cs => {
+  customStocksList.forEach(cs => {
     if (!syncedStocks.some(s => s.ticker === cs.ticker)) {
+      const baseP = Number(cs.ipoPrice || cs.price || 100);
       syncedStocks.push({
         ...cs,
-        price: cs.ipoPrice || cs.price || 100,
-        prevPrice: cs.ipoPrice || cs.price || 100,
-        history: [cs.ipoPrice || cs.price || 100]
+        ipoPrice: baseP,
+        price: baseP,
+        prevPrice: baseP,
+        isCustom: true,
+        history: [baseP]
       });
     }
   });
-
-  const stockMap = {};
-  syncedStocks.forEach(s => { stockMap[s.ticker] = s; });
 
   const syncedEvents = [];
   const syncedLogs = [];
 
   for (let slot = startSlot; slot <= currentSlot; slot++) {
-    simulateDeterministicGlobalTick(slot, baseCountries, stockMap, syncedStocks, syncedEvents, syncedLogs, true);
+    simulateDeterministicGlobalTick(slot, baseCountries, syncedStocks, syncedEvents, syncedLogs, true);
   }
 
-  // 保留最近 60 則全球同步新聞 + 管理員核准的自訂新聞 + 預設新聞
-  const customEvents = JSON.parse(localStorage.getItem(KEYS.CUSTOM_EVENTS)) || [];
-  eventsData = [...customEvents, ...syncedEvents.slice(0, 60), ...defaultEvents].slice(0, 90);
+  eventsData = [...customEventsList, ...syncedEvents.slice(0, 60), ...defaultEvents].slice(0, 90);
   stocksData = syncedStocks;
   stockLogs = syncedLogs.slice(0, 30);
   lastSyncedTickSlot = currentSlot;
 }
 
 // ==========================================
-// 初始化系統
+// 玩家個人資金與持股存取（自動保存在全服狀態中）
+// ==========================================
+function getCurrentPlayerPortfolio() {
+  const key = currentUser ? currentUser.username : '__GUEST__';
+  if (!allPortfolios[key]) {
+    allPortfolios[key] = { cash: 100000, holdings: {} };
+  }
+  return allPortfolios[key];
+}
+
+// ==========================================
+// 初始化系統（優先從雲端載入，次要讀取本地永久備份，最後讀取預設 JSON）
 // ==========================================
 async function initWorld() {
   try {
@@ -415,39 +547,40 @@ async function initWorld() {
     const defTransport = await tRes.json();
     const defDiplomacy = await dRes.json();
 
-    countriesData = JSON.parse(localStorage.getItem(KEYS.COUNTRIES)) || defCountries;
-    pendingNewsData = JSON.parse(localStorage.getItem(KEYS.PENDING_NEWS)) || [];
-    transportData = JSON.parse(localStorage.getItem(KEYS.TRANSPORT)) || defTransport;
-    diplomacyData = JSON.parse(localStorage.getItem(KEYS.DIPLOMACY)) || defDiplomacy;
-
-    countriesData.forEach(c => {
-      if (!c.website) {
-        c.website = {
-          theme: 'cyber',
-          slogan: `歡迎來到${c.officialName} — 榮耀與繁榮之地`,
-          notice: `${c.capital}市政廳發布最新年度發展白皮書。`,
-          culture: `${c.name}擁有獨特的${c.language}文化傳統與壯麗自然景觀，誠摯歡迎世界各國使節與旅客造訪。`
-        };
-      }
-    });
-
-    // 以全球 UTC 時間槽重建完全同步的新聞與股價折線圖歷史
-    rebuildGlobalSyncedMarketAndNews(countriesData, defEvents);
-    if (stocksData.length > 0) selectedChartTicker = stocksData[0].ticker;
-    playerPortfolio = JSON.parse(localStorage.getItem(KEYS.PORTFOLIO)) || { cash: 100000, holdings: {} };
-
-    unMessages = JSON.parse(localStorage.getItem(KEYS.UN_MSG)) || [
-      { sender: '👑 秘書長 (蔡幸恩)', text: '歡迎各國代表進入聯合國大會堂！全服已啟用跨機 UTC 新聞與股價同步引擎。', time: '2028/01/01', isAdmin: true }
+    // 預設基準狀態
+    countriesData = defCountries;
+    transportData = defTransport;
+    diplomacyData = defDiplomacy;
+    unMessages = [
+      { sender: '👑 秘書長 (蔡幸恩)', text: '歡迎各國代表進入聯合國大會堂！全服已啟用雲端自動儲存與跨機同步引擎。', time: '2028/01/01', isAdmin: true }
     ];
-    unProposals = JSON.parse(localStorage.getItem(KEYS.UN_PROP)) || [
+    unProposals = [
       { id: 'prop-1', title: '第 1 號決議：全球領海與跨國航線自由通行公約', desc: '保障所有主權國家民用航空與商船在公海的和平通行權。', author: '星辰聯邦', yes: 2, no: 0 }
     ];
-
-    registeredPlayers = JSON.parse(localStorage.getItem(KEYS.PLAYERS)) || [
+    registeredPlayers = [
       { username: 'Captain Huang', password: '123', banned: false },
       { username: 'Elena', password: '123', banned: false }
     ];
-    currentUser = JSON.parse(localStorage.getItem(KEYS.SESSION)) || null;
+
+    // 1. 先載入本地永久備份（確保更新網頁時資料不遺失）
+    const localSaved = JSON.parse(localStorage.getItem(STORAGE_BACKUP_KEY));
+    if (localSaved) {
+      applyPersistedState(localSaved, defCountries, defEvents, defTransport, defDiplomacy);
+    } else {
+      applyPersistedState({}, defCountries, defEvents, defTransport, defDiplomacy);
+    }
+
+    // 2. 接著從雲端資料庫拉取最新全服存檔（若雲端資料較新則自動覆蓋同步）
+    const cloudSaved = await pullStateFromCloud(true);
+    if (cloudSaved) {
+      applyPersistedState(cloudSaved, defCountries, defEvents, defTransport, defDiplomacy);
+      localStorage.setItem(STORAGE_BACKUP_KEY, JSON.stringify(cloudSaved));
+    }
+
+    currentUser = JSON.parse(localStorage.getItem(SESSION_KEY)) || null;
+    if (stocksData.length > 0 && !selectedChartTicker) {
+      selectedChartTicker = stocksData[0].ticker;
+    }
 
     flowSpeed = worldData.defaultSpeed ?? 1;
     speedAnchorRealMs = Date.now();
@@ -458,21 +591,31 @@ async function initWorld() {
     refreshAllViews();
     setupEventListeners();
     startGlobalSyncLoop();
+    startCloudAutoPullLoop();
   } catch (err) {
     console.error("初始化失敗：", err);
   }
 }
 
+// 統一儲存函式：同時寫入本地永久快取 + 背景自動上傳雲端資料庫
 function saveAll() {
-  localStorage.setItem(KEYS.COUNTRIES, JSON.stringify(countriesData));
-  localStorage.setItem(KEYS.PENDING_NEWS, JSON.stringify(pendingNewsData));
-  localStorage.setItem(KEYS.TRANSPORT, JSON.stringify(transportData));
-  localStorage.setItem(KEYS.DIPLOMACY, JSON.stringify(diplomacyData));
-  localStorage.setItem(KEYS.PORTFOLIO, JSON.stringify(playerPortfolio));
-  localStorage.setItem(KEYS.UN_MSG, JSON.stringify(unMessages));
-  localStorage.setItem(KEYS.UN_PROP, JSON.stringify(unProposals));
-  localStorage.setItem(KEYS.PLAYERS, JSON.stringify(registeredPlayers));
+  const payload = buildPersistPayload();
+  localStorage.setItem(STORAGE_BACKUP_KEY, JSON.stringify(payload));
   refreshAllViews();
+  pushStateToCloud(payload);
+}
+
+// 每 12 秒背景檢查雲端是否有其他玩家的新操作（新國家、新股票、新聞申請、聯合國發言）
+function startCloudAutoPullLoop() {
+  if (cloudPullTimer) clearInterval(cloudPullTimer);
+  cloudPullTimer = setInterval(async () => {
+    const cloudSaved = await pullStateFromCloud(false);
+    if (cloudSaved) {
+      applyPersistedState(cloudSaved, null, [], null, null);
+      localStorage.setItem(STORAGE_BACKUP_KEY, JSON.stringify(cloudSaved));
+      refreshAllViews();
+    }
+  }, 12000);
 }
 
 function refreshAllViews() {
@@ -541,7 +684,6 @@ function syncStandardWorldTime(isInitial = false) {
   }
 }
 
-// 每秒檢查是否跨越了全球統一的 30 秒（0.5 分鐘）時間槽，跨越即同步推進所有玩家的新聞與股價
 function startGlobalSyncLoop() {
   if (syncLoopTimer) clearInterval(syncLoopTimer);
   syncLoopTimer = setInterval(() => {
@@ -550,11 +692,8 @@ function startGlobalSyncLoop() {
     if (flowSpeed === 0) return;
     const currentSlot = getCurrentGlobalTickSlot();
     if (currentSlot > lastSyncedTickSlot) {
-      const stockMap = {};
-      stocksData.forEach(s => { stockMap[s.ticker] = s; });
-
       for (let slot = lastSyncedTickSlot + 1; slot <= currentSlot; slot++) {
-        simulateDeterministicGlobalTick(slot, countriesData, stockMap, stocksData, eventsData, stockLogs, true);
+        simulateDeterministicGlobalTick(slot, countriesData, stocksData, eventsData, stockLogs, true);
       }
       if (eventsData.length > 90) eventsData.length = 90;
       if (stockLogs.length > 30) stockLogs.length = 30;
@@ -569,7 +708,8 @@ function updateClockUI() {
   const m = String(simDate.month).padStart(2, '0');
   const d = String(simDate.day).padStart(2, '0');
   const pct = Math.floor((simDate.dayProgress || 0) * 100);
-  document.getElementById('world-clock-display').textContent = `🌐 ${simDate.year}年 ${m}月 ${d}日 (${pct}%)`;
+  const cloudTag = isCloudEnabled() ? '☁️' : '💾';
+  document.getElementById('world-clock-display').textContent = `${cloudTag} ${simDate.year}年 ${m}月 ${d}日 (${pct}%)`;
 }
 
 function recordStockPricePoint(stock, newPrice) {
@@ -579,15 +719,12 @@ function recordStockPricePoint(stock, newPrice) {
   stock.history.push(stock.price);
 }
 
-// 立即播報一則預覽新聞（僅管理員可用於測試或手動觸發）
 function triggerAutoNewsStation() {
   if (!isAdmin()) {
     return alert('⚠️ 為確保所有玩家的自動新聞與股價完全同步，系統每 0.5 分鐘會依全球標準時間自動同步播報！僅管理員可手動強制插播。');
   }
   const nextSlot = lastSyncedTickSlot + 1;
-  const stockMap = {};
-  stocksData.forEach(s => { stockMap[s.ticker] = s; });
-  simulateDeterministicGlobalTick(nextSlot, countriesData, stockMap, stocksData, eventsData, stockLogs, true);
+  simulateDeterministicGlobalTick(nextSlot, countriesData, stocksData, eventsData, stockLogs, true);
   lastSyncedTickSlot = nextSlot;
   refreshAllViews();
 }
@@ -604,7 +741,7 @@ function renderPendingNewsPanel() {
 
   if (isAdmin()) {
     formTitle.textContent = '📡 管理員直接發布全球新聞聯播';
-    formHint.innerHTML = '👑 已驗證世界管理員身份，你送出的新聞將<strong>立即全網廣播並連動股價</strong>。';
+    formHint.innerHTML = '👑 已驗證世界管理員身份，你送出的新聞將<strong>立即全網廣播、雲端保存並連動股價</strong>。';
     formHint.style.color = 'var(--success)';
     submitBtn.textContent = '📡 立即全網聯播';
   } else {
@@ -657,7 +794,7 @@ function reviewPendingNews(reqId, approve) {
         finalContent += `（股市連動：${st.ticker} ${req.impact > 0 ? '+' : ''}${(req.impact * 100).toFixed(0)}% ➔ $${st.price.toFixed(2)}）`;
       }
     }
-    const newEvt = {
+    eventsData.unshift({
       id: `evt-${Date.now()}`,
       year: simDate.year,
       dateStr: `${simDate.year}/${simDate.month}/${simDate.day} UTC`,
@@ -665,13 +802,10 @@ function reviewPendingNews(reqId, approve) {
       severity: req.severity,
       region: req.region,
       title: req.title,
-      content: finalContent
-    };
-    eventsData.unshift(newEvt);
-    const customEvents = JSON.parse(localStorage.getItem(KEYS.CUSTOM_EVENTS)) || [];
-    customEvents.unshift(newEvt);
-    localStorage.setItem(KEYS.CUSTOM_EVENTS, JSON.stringify(customEvents));
-    alert('✅ 已核准並全網聯播該則新聞！');
+      content: finalContent,
+      isCustom: true
+    });
+    alert('✅ 已核准並全網聯播該則新聞（已自動存入雲端）！');
   } else {
     alert('🗑️ 已駁回該筆新聞申請。');
   }
@@ -784,8 +918,6 @@ function adminManageStock(ticker, mode) {
   if (mode === 'DELETE') {
     if (!confirm(`確定要將「${st.ticker} - ${st.name}」強制下市刪除嗎？`)) return;
     stocksData.splice(idx, 1);
-    const customStocks = (JSON.parse(localStorage.getItem(KEYS.CUSTOM_STOCKS)) || []).filter(s => s.ticker !== ticker);
-    localStorage.setItem(KEYS.CUSTOM_STOCKS, JSON.stringify(customStocks));
     if (selectedChartTicker === ticker && stocksData.length > 0) {
       selectedChartTicker = stocksData[0].ticker;
     }
@@ -861,9 +993,10 @@ function renderStocksMarket() {
 
   renderStockLineChart();
 
-  document.getElementById('player-cash').textContent = `$${playerPortfolio.cash.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+  const portfolio = getCurrentPlayerPortfolio();
+  document.getElementById('player-cash').textContent = `$${portfolio.cash.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
   let portVal = 0;
-  const holdingEntries = Object.entries(playerPortfolio.holdings).filter(([, qty]) => qty > 0);
+  const holdingEntries = Object.entries(portfolio.holdings).filter(([, qty]) => qty > 0);
 
   if (holdingEntries.length === 0) {
     document.getElementById('my-holdings-list').textContent = '尚未持有任何股票';
@@ -886,7 +1019,7 @@ function renderStocksMarket() {
 }
 
 // ==========================================
-// 4. 聯合國大會制度 (議事聊天室 + 決議案投票)
+// 4. 聯合國大會制度
 // ==========================================
 function getSpeakerIdentity() {
   if (!currentUser) return '👤 訪客觀察員';
@@ -943,7 +1076,7 @@ function voteUNProposal(propId, choice) {
 }
 
 // ==========================================
-// 5. 國家獨特官方網站 (National Portal) 渲染
+// 5. 國家獨特官方網站 (National Portal)
 // ==========================================
 function openNationalPortal(countryId) {
   const c = countriesData.find(item => item.id === countryId);
@@ -1013,9 +1146,14 @@ function renderAdminPanel() {
     container.innerHTML = `<p class="hint">⚠️ 此區塊僅限系統綁定管理員（帳號 <code>admin</code>）登入後操作踢服與玩家權限。</p>`;
     return;
   }
+  const cloudStatus = isCloudEnabled()
+    ? `✅ <strong>雲端自動儲存已啟動</strong>（Bin ID: <code>${CLOUD_CONFIG.BIN_ID}</code>，網頁更新資料永不遺失）`
+    : `⚠️ <strong>目前為單機備份模式</strong>（請在 <code>js/app.js</code> 頂端填入 JSONBin <code>BIN_ID</code> 與 <code>API_KEY</code> 以啟用全服雲端儲存）`;
+
   container.innerHTML = `
     <p style="color:var(--success); font-size:0.86rem; margin-bottom:12px;">
-      ✅ 已驗證系統管理員身份。全服同步時間槽基準（UTC Epoch）：<code>${worldData.epochStartISO}</code> (目前第 ${lastSyncedTickSlot} 槽)
+      ${cloudStatus}<br/>
+      全服同步時間槽：目前第 <code>${lastSyncedTickSlot}</code> 槽
     </p>
     <div class="events-feed">
       ${registeredPlayers.map(p => `
@@ -1250,7 +1388,7 @@ function openBuilderForNew() {
   document.getElementById('b-id').value = '';
   document.getElementById('builder-mode-title').textContent = '🎨 創建新國家 & 設計專屬官網';
   document.getElementById('delete-country-btn').classList.add('hidden');
-  document.getElementById('permission-notice').textContent = `🎮 目前以「${currentUser.username}」身份建立國家與設計官網。`;
+  document.getElementById('permission-notice').textContent = `🎮 目前以「${currentUser.username}」身份建立國家與設計官網（建立後自動雲端存檔）。`;
   switchView('builder');
 }
 
@@ -1310,7 +1448,6 @@ function setupEventListeners() {
     renderStockLineChart();
   });
 
-  // 玩家創建自訂股票（至多 10 支，管理員無上限）
   document.getElementById('create-stock-form').addEventListener('submit', (e) => {
     e.preventDefault();
     if (!currentUser) return alert('🔑 請先登入帳號再申請股票掛牌上市！');
@@ -1342,18 +1479,15 @@ function setupEventListeners() {
       price: initPrice,
       prevPrice: initPrice,
       volume: 1000,
+      isCustom: true,
       history: [initPrice, initPrice]
     };
 
     stocksData.push(newStock);
-    const customStocks = JSON.parse(localStorage.getItem(KEYS.CUSTOM_STOCKS)) || [];
-    customStocks.push(newStock);
-    localStorage.setItem(KEYS.CUSTOM_STOCKS, JSON.stringify(customStocks));
-
     selectedChartTicker = ticker;
     document.getElementById('create-stock-form').reset();
     saveAll();
-    alert(`🎉 恭喜！「${name} (${ticker})」已成功於全球證券交易所掛牌上市！`);
+    alert(`🎉 恭喜！「${name} (${ticker})」已成功上市並自動儲存至雲端！`);
   });
 
   document.querySelectorAll('.flow-btn').forEach(btn => {
@@ -1381,18 +1515,19 @@ function setupEventListeners() {
     const stock = stocksData.find(s => s.ticker === ticker);
     if (!stock || shares <= 0) return;
 
+    const portfolio = getCurrentPlayerPortfolio();
     const totalCost = stock.price * shares;
-    const currentOwned = playerPortfolio.holdings[ticker] || 0;
+    const currentOwned = portfolio.holdings[ticker] || 0;
 
     if (action === 'BUY') {
-      if (playerPortfolio.cash < totalCost) return alert('❌ 可用資金不足！');
-      playerPortfolio.cash -= totalCost;
-      playerPortfolio.holdings[ticker] = currentOwned + shares;
+      if (portfolio.cash < totalCost) return alert('❌ 可用資金不足！');
+      portfolio.cash -= totalCost;
+      portfolio.holdings[ticker] = currentOwned + shares;
       recordStockPricePoint(stock, stock.price * (1 + Math.min(0.05, shares * 0.0005)));
     } else {
       if (currentOwned < shares) return alert('❌ 持有股數不足！');
-      playerPortfolio.cash += totalCost;
-      playerPortfolio.holdings[ticker] = currentOwned - shares;
+      portfolio.cash += totalCost;
+      portfolio.holdings[ticker] = currentOwned - shares;
       recordStockPricePoint(stock, stock.price * (1 - Math.min(0.05, shares * 0.0005)));
     }
 
@@ -1407,7 +1542,7 @@ function setupEventListeners() {
       price: stock.price
     });
     saveAll();
-    alert(`✅ 交易成功！已${action === 'BUY' ? '買進' : '賣出'} ${ticker} ${shares} 股。`);
+    alert(`✅ 交易成功！已${action === 'BUY' ? '買進' : '賣出'} ${ticker} ${shares} 股（持股已自動存檔）。`);
   });
 
   document.getElementById('event-publish-form').addEventListener('submit', (e) => {
@@ -1430,7 +1565,7 @@ function setupEventListeners() {
           content += `（股市連動：${st.ticker} ${impact > 0 ? '+' : ''}${(impact * 100).toFixed(0)}% ➔ $${st.price.toFixed(2)}）`;
         }
       }
-      const newEvt = {
+      eventsData.unshift({
         id: `evt-${Date.now()}`,
         year: simDate.year,
         dateStr: `${simDate.year}/${simDate.month}/${simDate.day} UTC`,
@@ -1438,16 +1573,12 @@ function setupEventListeners() {
         severity,
         region,
         title,
-        content
-      };
-      eventsData.unshift(newEvt);
-      const customEvents = JSON.parse(localStorage.getItem(KEYS.CUSTOM_EVENTS)) || [];
-      customEvents.unshift(newEvt);
-      localStorage.setItem(KEYS.CUSTOM_EVENTS, JSON.stringify(customEvents));
-
+        content,
+        isCustom: true
+      });
       document.getElementById('event-publish-form').reset();
       saveAll();
-      alert('👑 管理員新聞已直接全網聯播！');
+      alert('👑 管理員新聞已直接全網聯播並存入雲端！');
     } else {
       pendingNewsData.unshift({
         id: `req-${Date.now()}`,
@@ -1462,7 +1593,7 @@ function setupEventListeners() {
       });
       document.getElementById('event-publish-form').reset();
       saveAll();
-      alert('📩 已成功向世界管理員提交新聞申請，請等待管理員審核通過後聯播！');
+      alert('📩 已成功向世界管理員提交新聞申請並存入雲端！');
     }
   });
 
@@ -1509,7 +1640,7 @@ function setupEventListeners() {
     if (u === (worldData.adminAccount?.username || 'admin')) {
       if (p === (worldData.adminAccount?.password || '2026')) {
         currentUser = { username: u, role: 'ADMIN' };
-        localStorage.setItem(KEYS.SESSION, JSON.stringify(currentUser));
+        localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
         updateUserUI();
         refreshAllViews();
         return alert(`👑 歡迎回來，世界管理員 ${worldData.administrator}！`);
@@ -1523,17 +1654,17 @@ function setupEventListeners() {
     } else {
       player = { username: u, password: p, banned: false };
       registeredPlayers.push(player);
-      alert(`🎉 新玩家「${u}」註冊成功！`);
+      alert(`🎉 新玩家「${u}」註冊成功並已自動存入雲端資料庫！`);
     }
     currentUser = { username: u, role: 'PLAYER' };
-    localStorage.setItem(KEYS.SESSION, JSON.stringify(currentUser));
+    localStorage.setItem(SESSION_KEY, JSON.stringify(currentUser));
     saveAll();
     updateUserUI();
   });
 
   document.getElementById('logout-btn').addEventListener('click', () => {
     currentUser = null;
-    localStorage.removeItem(KEYS.SESSION);
+    localStorage.removeItem(SESSION_KEY);
     updateUserUI();
     refreshAllViews();
   });
@@ -1582,7 +1713,7 @@ function setupEventListeners() {
     country.territoryPoints = [...tempPolygonPoints];
     tempPolygonPoints = [];
     saveAll();
-    alert('✅ 領土邊界已儲存！');
+    alert('✅ 領土邊界已儲存至雲端！');
   });
 
   document.querySelectorAll('.layer-btn').forEach(btn => {
@@ -1627,7 +1758,7 @@ function setupEventListeners() {
         description: document.getElementById('b-desc').value.trim(),
         website: websiteConfig
       });
-      alert(`✅ 「${flag} ${name}」與專屬國家官網已更新！`);
+      alert(`✅ 「${flag} ${name}」與專屬國家官網已更新並存入雲端！`);
     } else {
       const pos = latLonToPercent(lat, lon);
       const newC = {
@@ -1651,8 +1782,10 @@ function setupEventListeners() {
         website: websiteConfig
       };
       countriesData.push(newC);
-      rebuildGlobalSyncedMarketAndNews(countriesData, []);
-      alert(`🎉 國家「${flag} ${name}」已成立，專屬官網與股票代碼 (${code}.WSE) 已自動上線！`);
+      const customStocks = stocksData.filter(s => s.isCustom);
+      const customEvents = eventsData.filter(e => e.isCustom);
+      rebuildGlobalSyncedMarketAndNews(countriesData, [], customStocks, customEvents);
+      alert(`🎉 國家「${flag} ${name}」已成立並永久儲存至雲端！`);
     }
     saveAll();
   });
@@ -1706,8 +1839,9 @@ function setupEventListeners() {
     alert('✅ 已複製完整 countries.json！');
   });
   document.getElementById('reset-local-btn').addEventListener('click', () => {
-    if (confirm('確定要清除本地暫存並恢復為 GitHub 雲端原始資料嗎？')) {
-      Object.values(KEYS).forEach(k => localStorage.removeItem(k));
+    if (confirm('確定要清除本機快取並重新從雲端拉取最新資料嗎？')) {
+      localStorage.removeItem(STORAGE_BACKUP_KEY);
+      localStorage.removeItem(SESSION_KEY);
       location.reload();
     }
   });
