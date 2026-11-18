@@ -34,7 +34,7 @@
 
       <nav class="nav-menu">
         <button class="nav-btn active" data-view="dashboard">🌎 世界總覽 Dashboard</button>
-        <button class="nav-btn" data-view="events">📺 24H 自動新聞台 & 通播</button>
+        <button class="nav-btn" data-view="events">📺 24H 自動新聞台 & 審核</button>
         <button class="nav-btn" data-view="stocks">📈 全球股票交易所</button>
         <button class="nav-btn" data-view="un">🏛️ 聯合國大會 (議事聊天室)</button>
         <button class="nav-btn" data-view="map">🗺️ 經緯度地圖 & 領土手繪</button>
@@ -64,7 +64,7 @@
       <div class="broadcast-banner" onclick="switchView('events')">
         <span class="badge-live">📺 GNN 新聞台</span>
         <span id="banner-event-text">連線全球新聞衛星中...</span>
-        <small style="margin-left:auto; color: var(--accent);">查看新聞與股價影響 ➔</small>
+        <small style="margin-left:auto; color: var(--accent);">查看 70 種新聞事件與股價影響 ➔</small>
       </div>
 
       <!-- 頂部搜尋與探索列 -->
@@ -101,94 +101,107 @@
             <div id="gdp-ranking-list" class="ranking-list"></div>
           </div>
           <div class="panel">
-            <h3>📺 GNN 最新新聞快報 (影響股市)</h3>
+            <h3>📺 GNN 最新新聞快報 (70 種事件庫)</h3>
             <div id="dashboard-events-list" class="event-mini-list"></div>
           </div>
         </div>
       </section>
 
-      <!-- 視圖 2：24H 自動新聞台 & 地理通播系統 -->
+      <!-- 視圖 2：24H 自動新聞台 & 審核申請系統 -->
       <section id="view-events" class="view">
-        <h2>📺 24H 全球自動新聞台 & 地理通播中心</h2>
+        <h2>📺 24H 全球自動新聞台 & 新聞發布審核中心</h2>
         <div class="builder-layout">
           <div class="panel">
             <div class="view-header">
-              <h3>📡 全球新聞聯播牆</h3>
+              <h3>📡 全球新聞聯播牆 (內建 70 種事件)</h3>
               <div style="display:flex; gap:8px;">
                 <select id="event-filter-type" class="select-input">
                   <option value="ALL">全部頻道</option>
-                  <option value="新聞">📰 新聞 (自動新聞台/股市快訊)</option>
+                  <option value="超級大漲">🚀 超級大漲 (極端利多)</option>
+                  <option value="史詩崩盤">💥 史詩崩盤 (極端利空)</option>
+                  <option value="新聞">📰 財經 / 民生新聞</option>
                   <option value="地理變動">🌋 地理變動 / 地震</option>
-                  <option value="自然災害">🌪️ 自然災害 / 颱風</option>
-                  <option value="國家動態">🏴 國家成立 / 領土變更</option>
-                  <option value="外交條約">🕊️ 外交 / 交通</option>
+                  <option value="自然災害">🌪️ 自然災害 / 氣象</option>
+                  <option value="外交條約">🕊️ 外交 / 科技 / 文化</option>
                 </select>
-                <button id="trigger-auto-event-btn" class="btn-secondary">⚡ 立即插播一則新聞</button>
+                <button id="trigger-auto-event-btn" class="btn-secondary">⚡ 立即隨機播報</button>
               </div>
             </div>
             <div id="events-feed-list" class="events-feed"></div>
           </div>
 
-          <div class="panel">
-            <h3>📢 記者投稿 / 手動發布新聞通播</h3>
-            <form id="event-publish-form" class="builder-form">
-              <div class="form-row">
-                <div class="form-group">
-                  <label>頻道類型 *</label>
-                  <select id="e-type" class="select-input">
-                    <option value="新聞">📰 新聞</option>
-                    <option value="地理變動">🌋 地理變動</option>
-                    <option value="自然災害">🌪️ 自然災害</option>
-                    <option value="國家動態">🏴 國家動態</option>
-                    <option value="外交條約">🕊️ 外交條約</option>
-                  </select>
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <div class="panel">
+              <h3 id="news-form-title">📝 向管理員申請發布新聞</h3>
+              <p id="news-permission-hint" class="hint" style="margin-bottom:10px; color:var(--warning);">
+                ⚠️ 非管理員無法直接聯播新聞，送出後將進入管理員審核佇列。
+              </p>
+              <form id="event-publish-form" class="builder-form">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>頻道類型 *</label>
+                    <select id="e-type" class="select-input">
+                      <option value="新聞">📰 新聞</option>
+                      <option value="地理變動">🌋 地理變動</option>
+                      <option value="自然災害">🌪️ 自然災害</option>
+                      <option value="外交條約">🕊️ 外交條約</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>影響等級 *</label>
+                    <select id="e-severity" class="select-input">
+                      <option value="一般">🟢 一般</option>
+                      <option value="重大">🟡 重大</option>
+                      <option value="緊急">🔴 緊急</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>涉及國家 (影響該國股價)</label>
+                    <select id="e-target-country" class="select-input">
+                      <option value="">無特定國家 (0%)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>申請股市影響方向</label>
+                    <select id="e-market-impact" class="select-input">
+                      <option value="0">➖ 中性 / 無影響 (0%)</option>
+                      <option value="0.01">〰️ 微幅波動 (+1%)</option>
+                      <option value="-0.01">〰️ 微幅波動 (-1%)</option>
+                      <option value="0.05">📈 利多 (+5%)</option>
+                      <option value="-0.05">📉 利空 (-5%)</option>
+                    </select>
+                  </div>
                 </div>
                 <div class="form-group">
-                  <label>影響等級 *</label>
-                  <select id="e-severity" class="select-input">
-                    <option value="一般">🟢 一般</option>
-                    <option value="重大">🟡 重大</option>
-                    <option value="緊急">🔴 緊急</option>
-                  </select>
-                </div>
-              </div>
-              <div class="form-row">
-                <div class="form-group">
-                  <label>涉及國家 (影響該國股價)</label>
-                  <select id="e-target-country" class="select-input">
-                    <option value="">無特定國家</option>
-                  </select>
+                  <label>發生地點 *</label>
+                  <input type="text" id="e-region" placeholder="例如：星輝市金融中心" required />
                 </div>
                 <div class="form-group">
-                  <label>股市影響方向</label>
-                  <select id="e-market-impact" class="select-input">
-                    <option value="0">➖ 中性 (0%)</option>
-                    <option value="0.06">📈 重大利多 (+6%)</option>
-                    <option value="0.03">📈 小幅利多 (+3%)</option>
-                    <option value="-0.04">📉 小幅利空 (-4%)</option>
-                    <option value="-0.08">📉 重大利空 (-8%)</option>
-                  </select>
+                  <label>新聞標題 *</label>
+                  <input type="text" id="e-title" placeholder="輸入新聞標題..." required />
                 </div>
+                <div class="form-group">
+                  <label>新聞內文 *</label>
+                  <textarea id="e-content" rows="2" placeholder="輸入詳細報導內容..." required></textarea>
+                </div>
+                <button type="submit" id="news-submit-btn" class="btn-primary" style="padding: 12px;">📩 提交新聞申請給管理員</button>
+              </form>
+            </div>
+
+            <!-- 待審核新聞佇列 -->
+            <div class="panel">
+              <div class="view-header">
+                <h3>📋 待審核新聞申請佇列 (<span id="pending-news-count">0</span>)</h3>
               </div>
-              <div class="form-group">
-                <label>發生地點 *</label>
-                <input type="text" id="e-region" placeholder="例如：星輝市金融中心" required />
-              </div>
-              <div class="form-group">
-                <label>新聞標題 *</label>
-                <input type="text" id="e-title" placeholder="輸入新聞標題..." required />
-              </div>
-              <div class="form-group">
-                <label>新聞內文 *</label>
-                <textarea id="e-content" rows="3" placeholder="輸入詳細報導內容..." required></textarea>
-              </div>
-              <button type="submit" class="btn-primary" style="padding: 12px;">📡 立即全網聯播</button>
-            </form>
+              <div id="pending-news-list" class="events-feed" style="max-height:240px;"></div>
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- 視圖 3：全球股票交易所 (含即時股價折線圖) -->
+      <!-- 視圖 3：全球股票交易所 (完整歷史折線圖 + 玩家建股上限 10 支) -->
       <section id="view-stocks" class="view">
         <div class="view-header">
           <h2>📈 全球證券交易所 (World Stock Exchange)</h2>
@@ -198,34 +211,68 @@
           </div>
         </div>
 
-        <!-- 互動股價走勢折線圖面板 -->
+        <!-- 互動股價走勢折線圖面板 (完整歷史保留) -->
         <div class="panel" style="margin-bottom: 20px;">
           <div class="view-header" style="margin-bottom: 10px;">
-            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
-              <h3 style="margin:0;">📊 即時股價走勢折線圖</h3>
+            <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+              <h3 style="margin:0;">📊 股價走勢折線圖</h3>
               <select id="chart-stock-select" class="select-input"></select>
+              <button id="toggle-chart-range-btn" class="btn-secondary" style="padding:5px 10px; font-size:0.8rem;">📜 目前顯示：全部歷史紀錄</button>
             </div>
             <div id="chart-stats-hud" style="font-size:0.85rem; color:var(--text-muted); font-family:monospace;">
               載入行情中...
             </div>
           </div>
           <div style="background: var(--bg-dark); border: 1px solid var(--border); border-radius: 8px; padding: 12px;">
-            <svg id="stock-line-chart" viewBox="0 0 800 220" style="width:100%; height:220px; display:block; overflow:visible;"></svg>
+            <svg id="stock-line-chart" viewBox="0 0 800 230" style="width:100%; height:230px; display:block; overflow:visible;"></svg>
           </div>
         </div>
 
         <div class="builder-layout">
-          <!-- 左側：各國上市公司報價表 -->
-          <div class="panel">
-            <div class="view-header">
-              <h3>🏢 各國掛牌企業即時行情</h3>
-              <span class="badge-flow">🤖 虛擬買家 AI 撮合中</span>
+          <!-- 左側：各國與玩家掛牌企業即時行情 + 玩家創建新股票 -->
+          <div style="display:flex; flex-direction:column; gap:16px;">
+            <div class="panel">
+              <div class="view-header">
+                <h3>🏢 掛牌企業即時行情</h3>
+                <span class="badge-flow">🤖 虛擬買家 AI 撮合中</span>
+              </div>
+              <p class="hint" style="margin-top:0; margin-bottom:10px;">💡 點擊任一股票可切換上方歷史走勢折線圖</p>
+              <div id="stocks-market-list" class="events-feed"></div>
             </div>
-            <p class="hint" style="margin-top:0; margin-bottom:10px;">💡 點擊任一股票可切換上方走勢折線圖</p>
-            <div id="stocks-market-list" class="events-feed"></div>
+
+            <!-- 玩家創建自訂股票 (上限 10 支) -->
+            <div class="panel">
+              <div class="view-header">
+                <h3>🏭 申請掛牌新股票</h3>
+                <span id="player-stock-quota-badge" class="event-tag">已建立：0 / 10 支</span>
+              </div>
+              <form id="create-stock-form" class="builder-form">
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>股票代碼 (3~5碼英數) *</label>
+                    <input type="text" id="cs-ticker" maxlength="5" placeholder="例如：NOVA" style="text-transform:uppercase;" required />
+                  </div>
+                  <div class="form-group">
+                    <label>公司名稱 *</label>
+                    <input type="text" id="cs-name" placeholder="例如：新星量子礦業" required />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group">
+                    <label>所屬國家 *</label>
+                    <select id="cs-country" class="select-input"></select>
+                  </div>
+                  <div class="form-group">
+                    <label>IPO 初始掛牌價 ($10~$500) *</label>
+                    <input type="number" id="cs-price" value="100" min="10" max="500" step="1" required />
+                  </div>
+                </div>
+                <button type="submit" class="btn-secondary" style="padding:10px;">🔔 敲鐘上市 (每位玩家至多 10 支)</button>
+              </form>
+            </div>
           </div>
 
-          <!-- 右側：下單交易與虛擬買家成交紀錄 -->
+          <!-- 右側：下單交易、管理員股票監控台與成交紀錄 -->
           <div style="display:flex; flex-direction:column; gap:16px;">
             <div class="panel">
               <h3>💹 股票交易下單台</h3>
@@ -255,9 +302,17 @@
               </div>
             </div>
 
+            <!-- 管理員專屬股票監控台 -->
+            <div class="panel" id="admin-stock-control-panel">
+              <h3>👑 管理員股市監管與下市權限</h3>
+              <div id="admin-stock-list" class="events-feed" style="max-height:190px;">
+                <p class="hint">⚠️ 僅限世界管理員（admin）登入後可強制調價或強制下市刪除股票。</p>
+              </div>
+            </div>
+
             <div class="panel">
-              <h3>🤖 交易所即時成交明細 (含系統虛擬買家)</h3>
-              <div id="stock-ticker-log" class="events-feed" style="max-height:220px;"></div>
+              <h3>🤖 交易所即時成交明細</h3>
+              <div id="stock-ticker-log" class="events-feed" style="max-height:200px;"></div>
             </div>
           </div>
         </div>
@@ -593,8 +648,8 @@
           <div class="panel">
             <h3>🔑 登入或註冊玩家帳號</h3>
             <p class="hint" style="margin-bottom:14px;">
-              • <strong>系統綁定世界管理員：</strong>帳號 <code>admin</code> / 密碼 <code>2026</code>（擁有完整管理權與踢服權限）<br/>
-              • <strong>一般玩家：</strong>輸入新帳號與密碼即可註冊，註冊後可創建國家、設計國家官網、在聯合國發言並買賣股票。
+              • <strong>系統綁定世界管理員：</strong>帳號 <code>admin</code> / 密碼 <code>2026</code>（擁有完整管理權、新聞審核權與股票監管權）<br/>
+              • <strong>一般玩家：</strong>輸入新帳號與密碼即可註冊，註冊後可創建國家、建立至多 10 支股票並向管理員申請發布新聞。
             </p>
             <form id="auth-form" class="builder-form">
               <div class="form-group">
