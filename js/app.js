@@ -114,7 +114,6 @@ function applyPersistedState(state, defCountries, defEvents, defTransport, defDi
 
   if (state.updatedAt) lastCloudUpdatedAt = state.updatedAt;
 
-  // 確保每個國家都有官網物件
   countriesData.forEach(c => {
     if (!c.website) {
       c.website = {
@@ -126,7 +125,6 @@ function applyPersistedState(state, defCountries, defEvents, defTransport, defDi
     }
   });
 
-  // 重建全服同步股票與新聞（並注入玩家自訂股票與管理員核准新聞）
   rebuildGlobalSyncedMarketAndNews(
     countriesData,
     defEvents || [],
@@ -135,7 +133,6 @@ function applyPersistedState(state, defCountries, defEvents, defTransport, defDi
   );
 }
 
-// 背景自動上傳所有使用者資料到雲端（防洗掉保護）
 async function pushStateToCloud(payload) {
   if (!isCloudEnabled() || isCloudSyncing) return;
   isCloudSyncing = true;
@@ -163,7 +160,6 @@ async function pushStateToCloud(payload) {
   }
 }
 
-// 從雲端拉取最新全服資料
 async function pullStateFromCloud(isInitial = false) {
   if (!isCloudEnabled() || isCloudSyncing) return null;
   try {
@@ -214,23 +210,26 @@ function hashStringToSeed(str) {
 }
 
 // ==========================================
-// 70 種新聞事件模板庫
+// 70 種新聞事件模板庫 (平衡波動版：有漲有跌、杜絕斷崖崩盤)
 // ==========================================
 function build70NewsTemplates() {
   const templates = [];
 
+  // 【1】唯一 1 則：超級大漲 (+16% ~ +22%)
   templates.push({
-    type: '超級大漲', sev: '緊急', minImp: 0.25, maxImp: 0.35,
+    type: '超級大漲', sev: '緊急', minImp: 0.16, maxImp: 0.22,
     titleFn: (c) => `🚀 【超級大漲】${c.name}宣布「跨維度零點能源反應爐」商業化成功！`,
-    contentFn: (c) => `【GNN 全球頭條】${c.name}皇家科學院在${c.capital}正式點亮全球首座零成本清潔能源核心，全球主權基金瘋狂掃貨，該國股價迎來史詩級暴漲！`
+    contentFn: (c) => `【GNN 全球頭條】${c.name}皇家科學院在${c.capital}正式點亮全球首座清潔能源核心，全球主權基金大舉買進，股價迎來強勢暴漲！`
   });
 
+  // 【2】唯一 1 則：史詩崩盤 (-15% ~ -20%)
   templates.push({
-    type: '史詩崩盤', sev: '緊急', minImp: -0.38, maxImp: -0.28,
-    titleFn: (c) => `💥 【史詩崩盤】${c.name}中央清算銀行遭量子駭客癱瘓，金融體系爆發恐慌拋售！`,
-    contentFn: (c) => `【GNN 紅色警報】${c.capital}證券與外匯清算系統突發大規模熔斷，流動性瞬間枯竭，市場出現不計代價的恐慌性崩盤抛售！`
+    type: '史詩崩盤', sev: '緊急', minImp: -0.20, maxImp: -0.15,
+    titleFn: (c) => `💥 【史詩崩盤】${c.name}中央清算銀行遭量子駭客攻擊，金融市場爆發恐慌拋售！`,
+    contentFn: (c) => `【GNN 紅色警報】${c.capital}證券清算系統突發短暫熔斷，市場出現恐慌性調節賣壓！`
   });
 
+  // 【3~12】10 則：強勁利多 (+4.5% ~ +8.5%)
   const strongBullTopics = [
     ['發現全球最大深海稀土與氦-3礦脈', '探勘船隊傳回捷報，未來三十年戰略資源自給無虞'],
     ['與三大星際貿易聯盟簽署零關稅自由貿易協定', '出口訂單預期將呈現倍數級成長'],
@@ -245,32 +244,34 @@ function build70NewsTemplates() {
   ];
   strongBullTopics.forEach(([headline, detail]) => {
     templates.push({
-      type: '新聞', sev: '重大', minImp: 0.06, maxImp: 0.11,
+      type: '新聞', sev: '重大', minImp: 0.045, maxImp: 0.085,
       titleFn: (c) => `📈 【強勁利多】${c.name}${headline}`,
       contentFn: (c) => `【GNN 財經快訊】${c.officialName}今日宣布${detail}，投資人信心大振。`
     });
   });
 
+  // 【13~22】10 則：強勁利空 (-4.5% ~ -8.0%)
   const strongBearTopics = [
     ['近海發生規模 7.1 強震，主要工業園區暫時停工檢修', '基礎設施受損引發供應鏈斷鏈擔憂'],
     ['超級氣旋風暴正面登陸沿海港口，海運航線全面停航', '進出口貿易被迫中斷，航運與製造股承壓'],
     ['大型商業銀行爆發壞帳準備金不足危機', '金融體系緊縮引發市場避險情緒升溫'],
     ['能源管線發生重大洩漏事故，工業用電啟動分區限電', '高耗能產業產能利用率被迫下調'],
     ['國際貿易仲裁庭裁定對該國出口商品課徵懲罰性關稅', '外銷主力企業營收面臨嚴峻挑戰'],
-    ['央行意外大幅升息三碼以對抗輸入性通膨', '資金成本高漲導致股市估值面臨修正'],
+    ['央行意外升息以對抗輸入性通膨', '資金成本高漲導致股市估值面臨修正'],
     ['主要礦產區爆發無限期全國性大罷工', '原物料報價飆升，下游製造業毛利受創'],
-    ['國防部宣布提升邊境戰備等級並實施部分空域管制', '地緣政治風險升溫促使外資短線撤離'],
-    ['關鍵半導體晶圓廠發生無塵室電力中斷事故', '全球科技供應鏈出貨時程被迫延後'],
-    ['財政部公布季度赤字擴大並擬開徵資本利得附加稅', '市場賣壓湧現，權值股普遍走跌']
+    ['國防部宣布提升邊境戰備等級並實施部分空域管制', '地緣政治風險升溫促使外資短線調節'],
+    ['關鍵半導體晶圓廠發生電力中斷事故', '全球科技供應鏈出貨時程被迫延後'],
+    ['財政部公布季度赤字擴大並擬調整稅制', '市場賣壓湧現，權值股普遍回檔']
   ];
   strongBearTopics.forEach(([headline, detail]) => {
     templates.push({
-      type: '自然災害', sev: '重大', minImp: -0.11, maxImp: -0.06,
+      type: '自然災害', sev: '重大', minImp: -0.08, maxImp: -0.045,
       titleFn: (c) => `📉 【強勁利空】${c.name}${headline}`,
-      contentFn: (c) => `【GNN 突發報導】受${detail}影響，${c.capital}交易大廳湧現明顯調節賣壓。`
+      contentFn: (c) => `【GNN 突發報導】受${detail}影響，${c.capital}交易大廳湧現調節賣壓。`
     });
   });
 
+  // 【23~34】12 則：溫和利多 (+2.0% ~ +4.2%)
   const mildBullTopics = [
     '季度零售銷售數據優於市場分析師預期',
     '觀光局統計入境國際旅客人次較去年同期成長 18%',
@@ -287,12 +288,13 @@ function build70NewsTemplates() {
   ];
   mildBullTopics.forEach((topic) => {
     templates.push({
-      type: '新聞', sev: '一般', minImp: 0.02, maxImp: 0.05,
+      type: '新聞', sev: '一般', minImp: 0.02, maxImp: 0.042,
       titleFn: (c) => `💹 【溫和利多】${c.name}${topic}`,
       contentFn: (c) => `【GNN 經濟觀察】${c.name}最新公布的經濟指標展現韌性，市場買盤溫和進場承接。`
     });
   });
 
+  // 【35~46】12 則：溫和利空 (-2.0% ~ -4.0%)
   const mildBearTopics = [
     '季度出口訂單增速略低於市場先前樂觀預估',
     '國際大宗商品價格上漲墊高企業營運成本',
@@ -309,12 +311,13 @@ function build70NewsTemplates() {
   ];
   mildBearTopics.forEach((topic) => {
     templates.push({
-      type: '新聞', sev: '一般', minImp: -0.05, maxImp: -0.02,
+      type: '新聞', sev: '一般', minImp: -0.04, maxImp: -0.02,
       titleFn: (c) => `📊 【溫和利空】${c.name}${topic}`,
       contentFn: (c) => `【GNN 市場動態】受${topic}影響，投資人操作轉趨謹慎，股價呈現小幅回檔。`
     });
   });
 
+  // 【47~58】12 則：極微幅震盪 (-1.5% ~ +1.8%)
   const microMoveTopics = [
     '證券交易所完成例行性交易主機軟體升級',
     '財政部公布上月稅收統計符合年度預算進度',
@@ -331,12 +334,13 @@ function build70NewsTemplates() {
   ];
   microMoveTopics.forEach((topic) => {
     templates.push({
-      type: '新聞', sev: '一般', minImp: -0.012, maxImp: 0.012,
+      type: '新聞', sev: '一般', minImp: -0.015, maxImp: 0.018,
       titleFn: (c) => `〰️ 【微幅震盪】${c.name}${topic}`,
-      contentFn: (c) => `【GNN 簡訊】${c.name}${topic}，市場反應平淡，股價僅出現極小幅度的正常技術性波動。`
+      contentFn: (c) => `【GNN 簡訊】${c.name}${topic}，市場反應平穩，股價呈現正常技術性波動。`
     });
   });
 
+  // 【59~70】12 則：完全中性 / 0% 無股價影響
   const zeroImpactTopics = [
     '首都國家美術館舉辦「星海與古典」跨國藝術特展',
     '全國青少年交響樂團在音樂廳舉行年度慈善公演',
@@ -365,7 +369,7 @@ function build70NewsTemplates() {
 const NEWS_70_TEMPLATES = build70NewsTemplates();
 
 // ==========================================
-// 全球統一 UTC 時間槽：同步所有使用者的新聞與股價
+// 全球統一 UTC 時間槽 + 動態均值回歸市場引擎
 // ==========================================
 function getEpochStartMs() {
   return Date.parse(worldData.epochStartISO || '2026-11-17T00:00:00Z');
@@ -390,16 +394,31 @@ function formatSimDateFromTickSlot(tickSlot) {
 }
 
 function simulateDeterministicGlobalTick(tickSlot, baseCountries, allStockList, generatedEvents, generatedLogs, recordAllPoints = true) {
-  const rng = createSeededRandom(hashStringToSeed(`VW-GLOBAL-TICK-${worldData.epochStartISO}-${tickSlot}`));
+  const rng = createSeededRandom(hashStringToSeed(`VW-GLOBAL-TICK-V2-${worldData.epochStartISO}-${tickSlot}`));
   const dateInfo = formatSimDateFromTickSlot(tickSlot);
 
   const virtualFunds = ['🤖 星際主權基金', '🤖 量子避險資本', '🤖 遠洋貿易銀行', '🤖 散戶自動交易程式', '🤖 皇家退休基金'];
+
   allStockList.forEach(st => {
-    const isBuy = rng() < 0.505;
-    const deltaPct = (isBuy ? 1 : -1) * (0.0015 + rng() * 0.0085);
-    const shares = Math.floor(rng() * 70) + 15;
+    const baseIpo = st.ipoPrice || 100;
+    const priceRatio = st.price / baseIpo;
+
+    // 動態均值回歸機率：低於發行價 65% 時買盤強勢抄底 (68% 漲)；高於 220% 時獲利了結 (36% 漲)
+    let bullProb = 0.515;
+    if (priceRatio < 0.65) bullProb = 0.68;
+    else if (priceRatio < 0.85) bullProb = 0.58;
+    else if (priceRatio > 2.2) bullProb = 0.36;
+    else if (priceRatio > 1.6) bullProb = 0.44;
+
+    const isBuy = rng() < bullProb;
+    // 放大日常波動至 0.4% ~ 2.2%，讓折線圖呈現自然活躍的波浪走勢
+    const baseVol = 0.004 + rng() * 0.018;
+    const reboundBoost = (!isBuy && priceRatio < 0.55) ? 0.5 : (isBuy && priceRatio < 0.65 ? 1.35 : 1.0);
+    const deltaPct = (isBuy ? 1 : -1) * baseVol * reboundBoost;
+
+    const shares = Math.floor(rng() * 80) + 20;
     st.prevPrice = st.price;
-    st.price = Math.max(1, Number((st.price * (1 + deltaPct)).toFixed(2)));
+    st.price = Math.max(15, Number((st.price * (1 + deltaPct)).toFixed(2)));
     st.volume += shares;
     if (recordAllPoints) st.history.push(st.price);
 
@@ -421,7 +440,14 @@ function simulateDeterministicGlobalTick(tickSlot, baseCountries, allStockList, 
     const countryStocks = allStockList.filter(s => s.countryId === target.id);
     const affectedStock = countryStocks.length > 0 ? countryStocks[Math.floor(rng() * countryStocks.length)] : null;
 
-    const picked = NEWS_70_TEMPLATES[Math.floor(rng() * NEWS_70_TEMPLATES.length)];
+    let picked = NEWS_70_TEMPLATES[Math.floor(rng() * NEWS_70_TEMPLATES.length)];
+
+    // 若該國股價已處於超跌低檔 (< 60% 發行價) 且抽到大利空，自動反轉為利多護盤新聞，避免長期趴地
+    if (affectedStock && affectedStock.price < (affectedStock.ipoPrice || 100) * 0.6 && picked.minImp < -0.04) {
+      const bullPool = NEWS_70_TEMPLATES.filter(t => t.minImp >= 0.045);
+      picked = bullPool[Math.floor(rng() * bullPool.length)];
+    }
+
     const impactPct = picked.minImp === picked.maxImp
       ? picked.minImp
       : picked.minImp + rng() * (picked.maxImp - picked.minImp);
@@ -430,7 +456,7 @@ function simulateDeterministicGlobalTick(tickSlot, baseCountries, allStockList, 
     if (affectedStock) {
       if (Math.abs(impactPct) >= 0.001) {
         affectedStock.prevPrice = affectedStock.price;
-        affectedStock.price = Math.max(1, Number((affectedStock.price * (1 + impactPct)).toFixed(2)));
+        affectedStock.price = Math.max(15, Number((affectedStock.price * (1 + impactPct)).toFixed(2)));
         if (recordAllPoints) {
           affectedStock.history[affectedStock.history.length - 1] = affectedStock.price;
         }
@@ -518,7 +544,7 @@ function rebuildGlobalSyncedMarketAndNews(baseCountries, defaultEvents, customSt
 }
 
 // ==========================================
-// 玩家個人資金與持股存取（自動保存在全服狀態中）
+// 玩家個人資金與持股存取
 // ==========================================
 function getCurrentPlayerPortfolio() {
   const key = currentUser ? currentUser.username : '__GUEST__';
@@ -529,7 +555,7 @@ function getCurrentPlayerPortfolio() {
 }
 
 // ==========================================
-// 初始化系統（優先從雲端載入，次要讀取本地永久備份，最後讀取預設 JSON）
+// 初始化系統
 // ==========================================
 async function initWorld() {
   try {
@@ -547,7 +573,6 @@ async function initWorld() {
     const defTransport = await tRes.json();
     const defDiplomacy = await dRes.json();
 
-    // 預設基準狀態
     countriesData = defCountries;
     transportData = defTransport;
     diplomacyData = defDiplomacy;
@@ -562,7 +587,6 @@ async function initWorld() {
       { username: 'Elena', password: '123', banned: false }
     ];
 
-    // 1. 先載入本地永久備份（確保更新網頁時資料不遺失）
     const localSaved = JSON.parse(localStorage.getItem(STORAGE_BACKUP_KEY));
     if (localSaved) {
       applyPersistedState(localSaved, defCountries, defEvents, defTransport, defDiplomacy);
@@ -570,7 +594,6 @@ async function initWorld() {
       applyPersistedState({}, defCountries, defEvents, defTransport, defDiplomacy);
     }
 
-    // 2. 接著從雲端資料庫拉取最新全服存檔（若雲端資料較新則自動覆蓋同步）
     const cloudSaved = await pullStateFromCloud(true);
     if (cloudSaved) {
       applyPersistedState(cloudSaved, defCountries, defEvents, defTransport, defDiplomacy);
@@ -597,7 +620,6 @@ async function initWorld() {
   }
 }
 
-// 統一儲存函式：同時寫入本地永久快取 + 背景自動上傳雲端資料庫
 function saveAll() {
   const payload = buildPersistPayload();
   localStorage.setItem(STORAGE_BACKUP_KEY, JSON.stringify(payload));
@@ -605,7 +627,6 @@ function saveAll() {
   pushStateToCloud(payload);
 }
 
-// 每 12 秒背景檢查雲端是否有其他玩家的新操作（新國家、新股票、新聞申請、聯合國發言）
 function startCloudAutoPullLoop() {
   if (cloudPullTimer) clearInterval(cloudPullTimer);
   cloudPullTimer = setInterval(async () => {
@@ -714,7 +735,7 @@ function updateClockUI() {
 
 function recordStockPricePoint(stock, newPrice) {
   stock.prevPrice = stock.price;
-  stock.price = Math.max(1, Number(newPrice.toFixed(2)));
+  stock.price = Math.max(15, Number(newPrice.toFixed(2)));
   if (!Array.isArray(stock.history)) stock.history = [stock.prevPrice];
   stock.history.push(stock.price);
 }
