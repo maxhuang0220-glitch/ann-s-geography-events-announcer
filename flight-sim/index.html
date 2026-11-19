@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>✈️ Global Flight Simulator — 獨立飛行模擬引擎</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #050b14; color: #f8fafc; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+    header { background: #0f172a; border-bottom: 1px solid #1e293b; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+    .hud-bar { display: flex; gap: 16px; font-family: monospace; font-size: 0.92rem; }
+    .hud-item span { color: #38bdf8; font-weight: bold; }
+    .main-cockpit { flex: 1; position: relative; display: flex; }
+    canvas { width: 100%; height: 100%; display: block; }
+    .controls-overlay { position: absolute; bottom: 16px; left: 16px; background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; padding: 12px 16px; border-radius: 10px; font-size: 0.82rem; line-height: 1.6; }
+    .btn { background: #38bdf8; color: #0f172a; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
+    .btn-danger { background: #ef4444; color: #fff; }
+    select { background: #1e293b; color: #fff; border: 1px solid #475569; padding: 5px 8px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div style="display:flex; align-items:center; gap:10px;">
+      <strong>✈️ WORLD FLIGHT SIMULATOR (獨立模組)</strong>
+      <select id="aircraft-select" onchange="resetFlight()">
+        <option value="cessna">🛩️ Cessna 172 教練機</option>
+        <option value="b787">🛫 Boeing 787 夢幻客機</option>
+        <option value="f22">🚀 F-22 猛禽戰鬥機</option>
+      </select>
+      <select id="airport-select" onchange="resetFlight()">
+        <option value="TPE">🇹🇼 台北桃園機場 (RCTP)</option>
+        <option value="HND">🇯🇵 東京羽田機場 (RJTT)</option>
+        <option value="JFK">🇺🇸 紐約甘迺迪機場 (KJFK)</option>
+      </select>
+    </div>
+    <div class="hud-bar">
+      <div class="hud-item">空速: <span id="hud-spd">0</span> kt</div>
+      <div class="hud-item">高度: <span id="hud-alt">0</span> ft</div>
+      <div class="hud-item">俯仰: <span id="hud-pitch">0</span>°</div>
+      <div class="hud-item">油門: <span id="hud-thr">0</span>%</div>
+      <div class="hud-item">起落架: <span id="hud-gear">DOWN</span></div>
+    </div>
+    <div style="display:flex; gap:8px;">
+      <button class="btn" onclick="resetFlight()">🔄 重置跑道</button>
+      <button class="btn btn-danger" onclick="window.close()">✕ 關閉視窗</button>
+    </div>
+  </header>
+
+  <div class="main-cockpit">
+    <canvas id="simCanvas"></canvas>
+    <div class="controls-overlay">
+      <strong>🎮 駕駛艙操控指南：</strong><br/>
+      • <code>W / S</code>：增加 / 減少油門推力<br/>
+      • <code>↑ / ↓</code>：機頭俯衝 / 拉升仰角<br/>
+      • <code>G</code>：收放起落架 ｜ <code>B</code>：地面煞車<br/>
+      • 提示：此獨立資料夾 <code>flight-sim/</code> 可隨時獨立擴充 3D 航圖與新機型！
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const AIRCRAFT_SPECS = {
+      cessna: { maxThrust: 160, liftFactor: 0.012, stallSpd: 55, color: '#f8fafc' },
+      b787:   { maxThrust: 520, liftFactor: 0.008, stallSpd: 135, color: '#38bdf8' },
+      f22:    { maxThrust: 1200, liftFactor: 0.015, stallSpd: 145, color: '#94a3b8' }
+    };
+
+    let state = { x: 120, alt: 0, speed: 0, pitch: 0, throttle: 0, gearDown: true, crashed: false, statusMsg: '停機坪待命中 — 按 W 增加油門起飛' };
+    const keys = {};
+
+    window.addEventListener('keydown', e => {
+      keys[e.code] = true;
+      if (e.code === 'KeyG') state.gearDown = !state.gearDown;
+    });
+    window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+    function resize() {
+      canvas.width = canvas.clientWidth;
+      canvas.height = canvas.clientHeight;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    function resetFlight() {
+      state = { x: 120, alt: 0, speed: 0, pitch: 0, throttle: 0, gearDown: true, crashed: false, statusMsg: '已就位跑道起點 — 按 W 推滿油門！' };
+    }
+
+    function update() {
+      if (state.crashed) return;
+      const spec = AIRCRAFT_SPECS[document.getElementById('aircraft-select').value];
+
+      if (keys['KeyW']) state.throttle = Math.min(100, state.throttle + 0.8);
+      if (keys['KeyS']) state.throttle = Math.max(0, state.throttle - 0.8);
+      if (keys['ArrowUp']) state.pitch = Math.min(35, state.pitch + 0.45);
+      if (keys['ArrowDown']) state.pitch = Math.max(-30, state.pitch - 0.45);
+      if (keys['KeyB'] && state.alt <= 0) state.speed = Math.max(0, state.speed - 1.5);
+
+      const targetSpd = (state.throttle / 100) * spec.maxThrust;
+      state.speed += (targetSpd - state.speed) * 0.012;
+      if (state.alt <= 0 && !keys['KeyW'] && state.throttle === 0) state.speed = Math.max(0, state.speed - 0.25);
+
+      const lift = state.speed > spec.stallSpd ? (state.speed - spec.stallSpd) * spec.liftFactor * (state.pitch + 2) : -1.5;
+      if (state.alt > 0 || lift > 0) state.alt = Math.max(0, state.alt + lift);
+
+      if (state.alt === 0 && state.speed > 20) {
+        if (!state.gearDown || state.pitch < -8) {
+          state.crashed = true;
+          state.statusMsg = '💥 墜毀！未放下起落架或俯衝角度過大（請按「重置跑道」）';
+        } else {
+          state.pitch = Math.max(0, state.pitch * 0.85);
+          state.statusMsg = '✅ 地面滑行安全穩定';
+        }
+      } else if (state.alt > 0) {
+        state.statusMsg = state.speed < spec.stallSpd ? '⚠️ 失速警報！請推高油門並壓低機頭！' : '🛫 巡航飛行中';
+      }
+
+      state.x += state.speed * 0.05;
+      document.getElementById('hud-spd').textContent = Math.round(state.speed);
+      document.getElementById('hud-alt').textContent = Math.round(state.alt);
+      document.getElementById('hud-pitch').textContent = state.pitch.toFixed(1);
+      document.getElementById('hud-thr').textContent = Math.round(state.throttle);
+      document.getElementById('hud-gear').textContent = state.gearDown ? 'DOWN' : 'UP';
+    }
+
+    function draw() {
+      const W = canvas.width, H = canvas.height;
+      const spec = AIRCRAFT_SPECS[document.getElementById('aircraft-select').value];
+
+      const skyDarkness = Math.min(0.85, state.alt / 25000);
+      const grad = ctx.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0, `rgba(14, 116, 144, ${1 - skyDarkness})`);
+      grad.addColorStop(1, '#0f172a');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, W, H);
+
+      ctx.fillStyle = 'rgba(255,255,255,0.14)';
+      for (let i = 0; i < 8; i++) {
+        const cx = ((i * 320 - state.x * 0.4) % (W + 200) + (W + 200)) % (W + 200) - 100;
+        const cy = 80 + (i % 4) * 75 + state.alt * 0.08;
+        if (cy < H - 60) {
+          ctx.beginPath();
+          ctx.ellipse(cx, cy, 70, 22, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      const groundY = H - 90 + Math.min(H, state.alt * 0.25);
+      if (groundY < H) {
+        ctx.fillStyle = '#064e3b';
+        ctx.fillRect(0, groundY, W, H - groundY);
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(0, groundY, W, 24);
+        ctx.fillStyle = '#f8fafc';
+        for (let rx = -((state.x * 2) % 80); rx < W; rx += 80) ctx.fillRect(rx, groundY + 10, 40, 4);
+      }
+
+      const planeX = 220;
+      const planeY = Math.min(H - 105, Math.max(110, H - 105 - state.alt * 0.04));
+      ctx.save();
+      ctx.translate(planeX, planeY);
+      ctx.rotate((-state.pitch * Math.PI) / 180);
+
+      ctx.fillStyle = spec.color;
+      ctx.beginPath();
+      ctx.moveTo(45, 0); ctx.lineTo(-35, -10); ctx.lineTo(-45, -22); ctx.lineTo(-48, 4); ctx.lineTo(35, 8);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.fillStyle = '#0284c7';
+      ctx.fillRect(-10, 0, 26, 6);
+
+      if (state.gearDown) {
+        ctx.strokeStyle = '#cbd5e1';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(20, 6); ctx.lineTo(20, 16);
+        ctx.moveTo(-18, 6); ctx.lineTo(-18, 16);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      ctx.fillStyle = state.crashed ? '#ef4444' : '#38bdf8';
+      ctx.font = 'bold 16px sans-serif';
+      ctx.fillText(state.statusMsg, 24, 36);
+    }
+
+    function loop() { update(); draw(); requestAnimationFrame(loop); }
+    loop();
+  </script>
+</body>
+</html>
