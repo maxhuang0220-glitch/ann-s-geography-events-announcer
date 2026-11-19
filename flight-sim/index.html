@@ -3,191 +3,502 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>✈️ Global Flight Simulator — 獨立飛行模擬引擎</title>
+  <title>✈️ Global 3D Flight Simulator (GeoFS Edition)</title>
+  <!-- 載入 Three.js 3D 渲染引擎 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #050b14; color: #f8fafc; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
-    header { background: #0f172a; border-bottom: 1px solid #1e293b; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
-    .hud-bar { display: flex; gap: 16px; font-family: monospace; font-size: 0.92rem; }
-    .hud-item span { color: #38bdf8; font-weight: bold; }
-    .main-cockpit { flex: 1; position: relative; display: flex; }
-    canvas { width: 100%; height: 100%; display: block; }
-    .controls-overlay { position: absolute; bottom: 16px; left: 16px; background: rgba(15, 23, 42, 0.85); border: 1px solid #334155; padding: 12px 16px; border-radius: 10px; font-size: 0.82rem; line-height: 1.6; }
-    .btn { background: #38bdf8; color: #0f172a; border: none; padding: 6px 12px; border-radius: 6px; font-weight: bold; cursor: pointer; }
-    .btn-danger { background: #ef4444; color: #fff; }
-    select { background: #1e293b; color: #fff; border: 1px solid #475569; padding: 5px 8px; border-radius: 6px; }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body { background: #020617; color: #f8fafc; font-family: 'Segoe UI', system-ui, sans-serif; overflow: hidden; height: 100vh; width: 100vw; }
+    
+    /* 頂部 GeoFS 風格控制列 */
+    header {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 20;
+      background: rgba(15, 23, 42, 0.82); backdrop-filter: blur(8px);
+      border-bottom: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 8px 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: bold; color: #38bdf8; letter-spacing: 0.5px; }
+    select, button {
+      background: rgba(30, 41, 59, 0.9); color: #f8fafc; border: 1px solid #475569;
+      padding: 5px 10px; border-radius: 6px; font-size: 0.85rem; cursor: pointer; transition: 0.15s;
+    }
+    select:hover, button:hover { border-color: #38bdf8; }
+    .btn-primary { background: #0284c7; border-color: #38bdf8; font-weight: bold; }
+    .btn-danger { background: #dc2626; border-color: #f87171; font-weight: bold; }
+
+    /* 3D 畫布 */
+    #canvas-container { position: fixed; inset: 0; z-index: 1; }
+
+    /* 中央戰鬥機/民航機 HUD 平視顯示器 */
+    .hud-center {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 340px; height: 240px; pointer-events: none; z-index: 10;
+      display: flex; justify-content: space-between; align-items: center;
+      color: #10b981; font-family: monospace; text-shadow: 0 0 6px rgba(16, 185, 129, 0.7);
+    }
+    .hud-tape {
+      border: 1px solid rgba(16, 185, 129, 0.5); background: rgba(6, 78, 59, 0.22);
+      padding: 6px 10px; border-radius: 4px; font-size: 0.95rem; font-weight: bold;
+    }
+    .hud-crosshair {
+      width: 40px; height: 40px; border: 2px solid rgba(16, 185, 129, 0.75);
+      border-radius: 50%; position: relative;
+    }
+    .hud-crosshair::before, .hud-crosshair::after {
+      content: ''; position: absolute; background: #10b981;
+    }
+    .hud-crosshair::before { top: 50%; left: -14px; right: -14px; height: 2px; transform: translateY(-50%); }
+    .hud-crosshair::after { left: 50%; top: -10px; bottom: 50%; width: 2px; transform: translateX(-50%); }
+
+    /* 底部 GeoFS 飛行儀表盤 */
+    .bottom-panel {
+      position: fixed; bottom: 14px; left: 14px; right: 14px; z-index: 15;
+      display: flex; justify-content: space-between; align-items: flex-end; pointer-events: none;
+    }
+    .glass-card {
+      pointer-events: auto; background: rgba(15, 23, 42, 0.82); backdrop-filter: blur(8px);
+      border: 1px solid rgba(148, 163, 184, 0.25); border-radius: 10px; padding: 12px 16px;
+      font-size: 0.82rem; line-height: 1.6;
+    }
+    .instruments-grid {
+      display: grid; grid-template-columns: repeat(5, auto); gap: 16px; text-align: center; font-family: monospace;
+    }
+    .inst-val { font-size: 1.15rem; font-weight: bold; color: #38bdf8; }
+    .inst-lbl { font-size: 0.72rem; color: #94a3b8; }
+
+    /* 狀態警告橫幅 */
+    #status-banner {
+      position: fixed; top: 56px; left: 50%; transform: translateX(-50%); z-index: 18;
+      background: rgba(15, 23, 42, 0.85); border: 1px solid #38bdf8; padding: 5px 16px;
+      border-radius: 999px; font-size: 0.85rem; font-weight: bold; color: #38bdf8;
+    }
   </style>
 </head>
 <body>
+
   <header>
-    <div style="display:flex; align-items:center; gap:10px;">
-      <strong>✈️ WORLD FLIGHT SIMULATOR (獨立模組)</strong>
-      <select id="aircraft-select" onchange="resetFlight()">
-        <option value="cessna">🛩️ Cessna 172 教練機</option>
-        <option value="b787">🛫 Boeing 787 夢幻客機</option>
-        <option value="f22">🚀 F-22 猛禽戰鬥機</option>
+    <div class="brand">
+      <span>🌐 GEOFS-3D ENGINE</span>
+      <select id="aircraft-select" onchange="changeAircraft()">
+        <option value="cessna">🛩️ Cessna 172 Skyhawk (螺旋槳教練機)</option>
+        <option value="b787">🛫 Boeing 787-9 Dreamliner (大型廣體客機)</option>
+        <option value="f22">🚀 F-22 Raptor (超音速隱形戰機)</option>
       </select>
-      <select id="airport-select" onchange="resetFlight()">
-        <option value="TPE">🇹🇼 台北桃園機場 (RCTP)</option>
-        <option value="HND">🇯🇵 東京羽田機場 (RJTT)</option>
-        <option value="JFK">🇺🇸 紐約甘迺迪機場 (KJFK)</option>
+      <select id="airport-select" onchange="teleportAirport()">
+        <option value="TPE">🇹🇼 台北桃園機場 (RCTP - 05L 跑道)</option>
+        <option value="HND">🇯🇵 東京羽田機場 (RJTT - 34R 跑道)</option>
+        <option value="JFK">🇺🇸 紐約甘迺迪機場 (KJFK - 04L 跑道)</option>
+        <option value="AIR">☁️ 5,000 ft 高空巡航測試</option>
+      </select>
+      <select id="weather-select" onchange="changeWeather()">
+        <option value="day">☀️ 晴朗白晝</option>
+        <option value="sunset">🌅 黃昏暮光</option>
+        <option value="night">🌙 夜間航行</option>
       </select>
     </div>
-    <div class="hud-bar">
-      <div class="hud-item">空速: <span id="hud-spd">0</span> kt</div>
-      <div class="hud-item">高度: <span id="hud-alt">0</span> ft</div>
-      <div class="hud-item">俯仰: <span id="hud-pitch">0</span>°</div>
-      <div class="hud-item">油門: <span id="hud-thr">0</span>%</div>
-      <div class="hud-item">起落架: <span id="hud-gear">DOWN</span></div>
-    </div>
-    <div style="display:flex; gap:8px;">
-      <button class="btn" onclick="resetFlight()">🔄 重置跑道</button>
-      <button class="btn btn-danger" onclick="window.close()">✕ 關閉視窗</button>
+
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button class="btn-primary" onclick="cycleCamera()">🎥 視角：<span id="cam-mode-text">機尾追尾</span> (C)</button>
+      <button onclick="resetFlight()">🔄 重置跑道 (R)</button>
+      <button class="btn-danger" onclick="window.close()">✕ 離開</button>
     </div>
   </header>
 
-  <div class="main-cockpit">
-    <canvas id="simCanvas"></canvas>
-    <div class="controls-overlay">
-      <strong>🎮 駕駛艙操控指南：</strong><br/>
-      • <code>W / S</code>：增加 / 減少油門推力<br/>
-      • <code>↑ / ↓</code>：機頭俯衝 / 拉升仰角<br/>
-      • <code>G</code>：收放起落架 ｜ <code>B</code>：地面煞車<br/>
-      • 提示：此獨立資料夾 <code>flight-sim/</code> 可隨時獨立擴充 3D 航圖與新機型！
+  <div id="status-banner">停機坪待命中 — 按 [W] 或 [9] 推滿油門開始滑行起飛</div>
+
+  <!-- 中央飛行 HUD -->
+  <div class="hud-center">
+    <div class="hud-tape">SPD<br/><span id="hud-spd">0</span> KT</div>
+    <div class="hud-crosshair"></div>
+    <div class="hud-tape">ALT<br/><span id="hud-alt">0</span> FT</div>
+  </div>
+
+  <!-- 3D 場景容器 -->
+  <div id="canvas-container"></div>
+
+  <!-- 底部操控與儀表盤 -->
+  <div class="bottom-panel">
+    <div class="glass-card">
+      <strong style="color:#38bdf8;">🎮 GeoFS 鍵盤飛行操控：</strong><br/>
+      • <code>W / S</code> (或 <code>PageUp/Dn</code>)：增加 / 減少油門推力<br/>
+      • <code>↑ / ↓</code>：俯仰 (拉升機頭 / 俯衝)<br/>
+      • <code>← / →</code>：副翼滾轉 (左傾斜 / 右傾斜轉向)<br/>
+      • <code>A / D</code>：方向舵偏航 (地面滑行轉彎)<br/>
+      • <code>G</code>：收放起落架 ｜ <code>F</code>：襟翼 ｜ <code>C</code>：切換視角 ｜ <code>B</code>：煞車
+    </div>
+
+    <div class="glass-card instruments-grid">
+      <div><div class="inst-val" id="inst-thr">0%</div><div class="inst-lbl">THROTTLE 油門</div></div>
+      <div><div class="inst-val" id="inst-hdg">360°</div><div class="inst-lbl">HEADING 航向</div></div>
+      <div><div class="inst-val" id="inst-vs">0</div><div class="inst-lbl">V/S 爬升率</div></div>
+      <div><div class="inst-val" id="inst-flaps">0°</div><div class="inst-lbl">FLAPS 襟翼</div></div>
+      <div><div class="inst-val" id="inst-gear" style="color:#10b981;">DOWN</div><div class="inst-lbl">GEAR 起落架</div></div>
     </div>
   </div>
 
   <script>
-    const canvas = document.getElementById('simCanvas');
-    const ctx = canvas.getContext('2d');
+    // ==========================================
+    // 1. 初始化 Three.js 3D 場景、光照與地形
+    // ==========================================
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x38bdf8);
+    scene.fog = new THREE.FogExp2(0x7dd3fc, 0.00018);
 
-    const AIRCRAFT_SPECS = {
-      cessna: { maxThrust: 160, liftFactor: 0.012, stallSpd: 55, color: '#f8fafc' },
-      b787:   { maxThrust: 520, liftFactor: 0.008, stallSpd: 135, color: '#38bdf8' },
-      f22:    { maxThrust: 1200, liftFactor: 0.015, stallSpd: 145, color: '#94a3b8' }
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 18000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    container.appendChild(renderer.domElement);
+
+    // 太陽與環境光
+    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x0f172a, 0.85);
+    scene.add(hemiLight);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    dirLight.position.set(1500, 3000, 1500);
+    scene.add(dirLight);
+
+    // 3D 海洋與地形網格 (GeoFS 風格分塊地表)
+    const groundGeo = new THREE.PlaneGeometry(40000, 40000, 64, 64);
+    groundGeo.rotateX(-Math.PI / 2);
+    const groundMat = new THREE.MeshLambertMaterial({ color: 0x15803d });
+    const ground = new THREE.Mesh(groundGeo, groundMat);
+    scene.add(ground);
+
+    // 3D 山脈與城市建築群
+    const envGroup = new THREE.Group();
+    scene.add(envGroup);
+
+    // 打造主機場跑道 (長度 2400m)
+    const runwayGroup = new THREE.Group();
+    const runwayMesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(55, 2400),
+      new THREE.MeshLambertMaterial({ color: 0x1e293b })
+    );
+    runwayMesh.rotation.x = -Math.PI / 2;
+    runwayMesh.position.set(0, 0.15, -1000);
+    runwayGroup.add(runwayMesh);
+
+    // 跑道中央白色標線與進場燈光
+    for (let z = 150; z > -2150; z -= 60) {
+      const stripe = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.2, 28),
+        new THREE.MeshBasicMaterial({ color: 0xf8fafc })
+      );
+      stripe.rotation.x = -Math.PI / 2;
+      stripe.position.set(0, 0.25, z);
+      runwayGroup.add(stripe);
+
+      // 跑道兩側燈光
+      const lightL = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), new THREE.MeshBasicMaterial({ color: 0x38bdf8 }));
+      lightL.position.set(-26, 0.6, z);
+      const lightR = lightL.clone();
+      lightR.position.set(26, 0.6, z);
+      runwayGroup.add(lightL, lightR);
+    }
+    scene.add(runwayGroup);
+
+    // 隨機生成 3D 山峰、都市大樓與雲朵
+    const mountainMat = new THREE.MeshLambertMaterial({ color: 0x166534 });
+    const snowMat = new THREE.MeshLambertMaterial({ color: 0xf8fafc });
+    for (let i = 0; i < 90; i++) {
+      const mx = (Math.random() - 0.5) * 26000;
+      const mz = (Math.random() - 0.5) * 26000;
+      if (Math.abs(mx) < 400 && Math.abs(mz + 1000) < 2600) continue; // 避開跑道淨空區
+      const radius = 350 + Math.random() * 600;
+      const height = 250 + Math.random() * 950;
+      const cone = new THREE.Mesh(new THREE.ConeGeometry(radius, height, 7), height > 800 ? snowMat : mountainMat);
+      cone.position.set(mx, height / 2, mz);
+      envGroup.add(cone);
+    }
+
+    // 3D 立體雲層
+    const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+    for (let i = 0; i < 80; i++) {
+      const cloud = new THREE.Mesh(new THREE.BoxGeometry(260 + Math.random() * 300, 45, 180 + Math.random() * 200), cloudMat);
+      cloud.position.set((Math.random() - 0.5) * 22000, 600 + Math.random() * 1400, (Math.random() - 0.5) * 22000);
+      envGroup.add(cloud);
+    }
+
+    // ==========================================
+    // 2. 建立 3D 飛機模型與飛行物理參數
+    // ==========================================
+    const AIRCRAFT_CONFIGS = {
+      cessna: { name: 'Cessna 172', maxSpd: 145, accel: 16, lift: 0.032, stall: 48, turnRate: 1.1, bodyColor: 0xf8fafc, wingColor: 0xdc2626, scale: 1.0 },
+      b787:   { name: 'Boeing 787', maxSpd: 510, accel: 28, lift: 0.022, stall: 125, turnRate: 0.65, bodyColor: 0xf8fafc, wingColor: 0x0284c7, scale: 2.2 },
+      f22:    { name: 'F-22 Raptor', maxSpd: 1150, accel: 65, lift: 0.045, stall: 135, turnRate: 1.6, bodyColor: 0x64748b, wingColor: 0x334155, scale: 1.3 }
     };
 
-    let state = { x: 120, alt: 0, speed: 0, pitch: 0, throttle: 0, gearDown: true, crashed: false, statusMsg: '停機坪待命中 — 按 W 增加油門起飛' };
-    const keys = {};
+    const planeGroup = new THREE.Group();
+    scene.add(planeGroup);
+    let gearMeshGroup = new THREE.Group();
+    let propMesh = null;
 
+    function buildAircraftMesh(typeKey) {
+      while (planeGroup.children.length > 0) planeGroup.remove(planeGroup.children[0]);
+      const cfg = AIRCRAFT_CONFIGS[typeKey];
+
+      // 機身
+      const fuselage = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.1, 0.7, 14, 12),
+        new THREE.MeshPhongMaterial({ color: cfg.bodyColor })
+      );
+      fuselage.rotation.x = Math.PI / 2;
+      planeGroup.add(fuselage);
+
+      // 駕駛艙玻璃罩
+      const cockpit = new THREE.Mesh(
+        new THREE.SphereGeometry(1.05, 12, 12),
+        new THREE.MeshPhongMaterial({ color: 0x0f172a, shininess: 100 })
+      );
+      cockpit.scale.set(0.9, 0.8, 2.2);
+      cockpit.position.set(0, 0.65, -2.2);
+      planeGroup.add(cockpit);
+
+      // 主機翼
+      const wings = new THREE.Mesh(
+        new THREE.BoxGeometry(18, 0.25, 2.6),
+        new THREE.MeshPhongMaterial({ color: cfg.wingColor })
+      );
+      wings.position.set(0, 0.2, -1);
+      planeGroup.add(wings);
+
+      // 水平尾翼 & 垂直尾翼
+      const hTail = new THREE.Mesh(new THREE.BoxGeometry(6, 0.2, 1.4), new THREE.MeshPhongMaterial({ color: cfg.wingColor }));
+      hTail.position.set(0, 0.3, 6);
+      const vTail = new THREE.Mesh(new THREE.BoxGeometry(0.25, 3.2, 2.0), new THREE.MeshPhongMaterial({ color: cfg.wingColor }));
+      vTail.position.set(0, 1.6, 5.8);
+      planeGroup.add(hTail, vTail);
+
+      // 螺旋槳 (Cessna)
+      propMesh = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.25, 0.1), new THREE.MeshBasicMaterial({ color: 0x1e293b }));
+      propMesh.position.set(0, 0, -7.2);
+      propMesh.visible = (typeKey === 'cessna');
+      planeGroup.add(propMesh);
+
+      // 起落架
+      gearMeshGroup = new THREE.Group();
+      const wheelMat = new THREE.MeshBasicMaterial({ color: 0x090d16 });
+      [[-2.2, -1.3, -1], [2.2, -1.3, -1], [0, -1.3, -5]].forEach(([gx, gy, gz]) => {
+        const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.35, 10), wheelMat);
+        wheel.rotation.z = Math.PI / 2;
+        wheel.position.set(gx, gy, gz);
+        gearMeshGroup.add(wheel);
+      });
+      planeGroup.add(gearMeshGroup);
+      planeGroup.scale.setScalar(cfg.scale);
+    }
+
+    // ==========================================
+    // 3. 飛行狀態與多視角控制 (GeoFS 體驗)
+    // ==========================================
+    let flight = {
+      type: 'cessna',
+      pos: new THREE.Vector3(0, 2.2, 120),
+      pitch: 0, roll: 0, yaw: 0,
+      speed: 0, throttle: 0, flaps: 0,
+      gearDown: true, crashed: false,
+      camMode: 0 // 0: 機尾追尾, 1: 駕駛艙第一人稱, 2: 遠距廣角
+    };
+
+    const CAM_MODES = ['機尾追尾', '駕駛艙第一人稱', '遠距廣角觀景'];
+    const keys = {};
     window.addEventListener('keydown', e => {
       keys[e.code] = true;
-      if (e.code === 'KeyG') state.gearDown = !state.gearDown;
+      if (e.code === 'KeyG') {
+        flight.gearDown = !flight.gearDown;
+        gearMeshGroup.visible = flight.gearDown;
+      }
+      if (e.code === 'KeyF') {
+        flight.flaps = (flight.flaps + 15) % 45;
+      }
+      if (e.code === 'KeyC') cycleCamera();
+      if (e.code === 'KeyR') resetFlight();
     });
     window.addEventListener('keyup', e => { keys[e.code] = false; });
 
-    function resize() {
-      canvas.width = canvas.clientWidth;
-      canvas.height = canvas.clientHeight;
+    function cycleCamera() {
+      flight.camMode = (flight.camMode + 1) % CAM_MODES.length;
+      document.getElementById('cam-mode-text').textContent = CAM_MODES[flight.camMode];
     }
-    window.addEventListener('resize', resize);
-    resize();
+
+    function changeAircraft() {
+      flight.type = document.getElementById('aircraft-select').value;
+      buildAircraftMesh(flight.type);
+      resetFlight();
+    }
+
+    function changeWeather() {
+      const w = document.getElementById('weather-select').value;
+      if (w === 'day') {
+        scene.background = new THREE.Color(0x38bdf8);
+        scene.fog.color = new THREE.Color(0x7dd3fc);
+        dirLight.intensity = 1.1;
+      } else if (w === 'sunset') {
+        scene.background = new THREE.Color(0xf97316);
+        scene.fog.color = new THREE.Color(0xfb923c);
+        dirLight.intensity = 0.75;
+      } else {
+        scene.background = new THREE.Color(0x020617);
+        scene.fog.color = new THREE.Color(0x0f172a);
+        dirLight.intensity = 0.25;
+      }
+    }
+
+    function teleportAirport() {
+      const ap = document.getElementById('airport-select').value;
+      resetFlight();
+      if (ap === 'AIR') {
+        flight.pos.set(0, 1524, -400); // 5000 ft
+        flight.throttle = 75;
+        flight.speed = 220;
+        flight.gearDown = false;
+        gearMeshGroup.visible = false;
+      }
+    }
 
     function resetFlight() {
-      state = { x: 120, alt: 0, speed: 0, pitch: 0, throttle: 0, gearDown: true, crashed: false, statusMsg: '已就位跑道起點 — 按 W 推滿油門！' };
+      const baseHeight = 2.1 * AIRCRAFT_CONFIGS[flight.type].scale;
+      flight.pos.set(0, baseHeight, 120);
+      flight.pitch = 0; flight.roll = 0; flight.yaw = 0;
+      flight.speed = 0; flight.throttle = 0; flight.flaps = 0;
+      flight.gearDown = true; flight.crashed = false;
+      gearMeshGroup.visible = true;
+      document.getElementById('status-banner').textContent = '就緒 — 按 [W] 推滿油門並用 [↓] 拉起機頭起飛！';
+      document.getElementById('status-banner').style.color = '#38bdf8';
     }
 
-    function update() {
-      if (state.crashed) return;
-      const spec = AIRCRAFT_SPECS[document.getElementById('aircraft-select').value];
+    buildAircraftMesh('cessna');
+    resetFlight();
 
-      if (keys['KeyW']) state.throttle = Math.min(100, state.throttle + 0.8);
-      if (keys['KeyS']) state.throttle = Math.max(0, state.throttle - 0.8);
-      if (keys['ArrowUp']) state.pitch = Math.min(35, state.pitch + 0.45);
-      if (keys['ArrowDown']) state.pitch = Math.max(-30, state.pitch - 0.45);
-      if (keys['KeyB'] && state.alt <= 0) state.speed = Math.max(0, state.speed - 1.5);
+    // ==========================================
+    // 4. 空氣動力學與 60FPS 物理迴圈
+    // ==========================================
+    const clock = new THREE.Clock();
 
-      const targetSpd = (state.throttle / 100) * spec.maxThrust;
-      state.speed += (targetSpd - state.speed) * 0.012;
-      if (state.alt <= 0 && !keys['KeyW'] && state.throttle === 0) state.speed = Math.max(0, state.speed - 0.25);
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(0.05, clock.getDelta());
+      const cfg = AIRCRAFT_CONFIGS[flight.type];
+      const groundLevel = 2.1 * cfg.scale;
+      const isAirborne = flight.pos.y > groundLevel + 0.5;
 
-      const lift = state.speed > spec.stallSpd ? (state.speed - spec.stallSpd) * spec.liftFactor * (state.pitch + 2) : -1.5;
-      if (state.alt > 0 || lift > 0) state.alt = Math.max(0, state.alt + lift);
+      if (!flight.crashed) {
+        // 油門控制
+        if (keys['KeyW'] || keys['PageUp']) flight.throttle = Math.min(100, flight.throttle + 35 * dt);
+        if (keys['KeyS'] || keys['PageDown']) flight.throttle = Math.max(0, flight.throttle - 35 * dt);
+        if (keys['Digit9']) flight.throttle = 100;
+        if (keys['Digit0']) flight.throttle = 0;
 
-      if (state.alt === 0 && state.speed > 20) {
-        if (!state.gearDown || state.pitch < -8) {
-          state.crashed = true;
-          state.statusMsg = '💥 墜毀！未放下起落架或俯衝角度過大（請按「重置跑道」）';
+        // 姿態操縱 (GeoFS 手感)
+        if (keys['ArrowDown']) flight.pitch += 0.65 * dt; // 拉桿抬頭
+        if (keys['ArrowUp']) flight.pitch -= 0.65 * dt;   // 推桿俯衝
+        if (keys['ArrowLeft']) flight.roll += 1.35 * dt;
+        if (keys['ArrowRight']) flight.roll -= 1.35 * dt;
+
+        // 自動回正阻尼
+        if (!keys['ArrowLeft'] && !keys['ArrowRight']) flight.roll *= (1 - 1.2 * dt);
+
+        // 方向舵 / 地面轉向
+        if (keys['KeyA']) flight.yaw += 0.75 * dt;
+        if (keys['KeyD']) flight.yaw -= 0.75 * dt;
+
+        // 滾轉協調轉彎 (Bank-to-Turn)
+        if (isAirborne) {
+          flight.yaw += Math.sin(flight.roll) * cfg.turnRate * 0.65 * dt;
         } else {
-          state.pitch = Math.max(0, state.pitch * 0.85);
-          state.statusMsg = '✅ 地面滑行安全穩定';
+          flight.roll = 0;
+          flight.pitch = Math.max(0, flight.pitch);
         }
-      } else if (state.alt > 0) {
-        state.statusMsg = state.speed < spec.stallSpd ? '⚠️ 失速警報！請推高油門並壓低機頭！' : '🛫 巡航飛行中';
+
+        // 速度與推力計算
+        const targetSpd = (flight.throttle / 100) * cfg.maxSpd;
+        flight.speed += (targetSpd - flight.speed) * (cfg.accel / cfg.maxSpd) * dt * 2.2;
+        if (keys['KeyB'] && !isAirborne) flight.speed = Math.max(0, flight.speed - 65 * dt);
+
+        // 升力與重力
+        const effectiveStall = cfg.stall * (1 - flight.flaps * 0.005);
+        const liftForce = flight.speed > effectiveStall
+          ? (flight.speed - effectiveStall) * cfg.lift * (Math.sin(flight.pitch) * 18 + 1.2)
+          : -9.8;
+
+        const verticalSpeed = isAirborne ? liftForce : Math.max(0, liftForce);
+        flight.pos.y += verticalSpeed * dt;
+
+        // 空間前進向量
+        const forward = new THREE.Vector3(0, 0, -1);
+        const euler = new THREE.Euler(flight.pitch, flight.yaw, flight.roll, 'YXZ');
+        forward.applyEuler(euler);
+        flight.pos.addScaledVector(forward, flight.speed * 0.514 * dt);
+
+        // 觸地與降落判定
+        if (flight.pos.y <= groundLevel) {
+          flight.pos.y = groundLevel;
+          if (isAirborne && (!flight.gearDown || verticalSpeed < -18 || Math.abs(flight.roll) > 0.35)) {
+            flight.crashed = true;
+            document.getElementById('status-banner').textContent = '💥 墜毀！降落速度過快或未放下起落架（按 R 重置）';
+            document.getElementById('status-banner').style.color = '#ef4444';
+          } else {
+            flight.pitch = Math.max(0, flight.pitch * 0.85);
+            if (flight.speed > 5) {
+              document.getElementById('status-banner').textContent = flight.speed > effectiveStall
+                ? '🛫 已達起飛速度 (V2)！按 [↓] 拉升機頭離地！'
+                : '🛞 跑道加速滑行中...';
+            }
+          }
+        } else {
+          document.getElementById('status-banner').textContent = flight.speed < effectiveStall
+            ? '⚠️ STALL 失速警報！請推滿油門並壓低機頭！'
+            : `✈️ 巡航飛行中 — ${cfg.name}`;
+          document.getElementById('status-banner').style.color = flight.speed < effectiveStall ? '#f59e0b' : '#10b981';
+        }
+
+        // 更新飛機 3D 座標與螺旋槳旋轉
+        planeGroup.position.copy(flight.pos);
+        planeGroup.rotation.copy(euler);
+        if (propMesh && propMesh.visible) propMesh.rotation.z += (flight.throttle + 5) * 0.35 * dt;
+
+        // 更新攝影機視角
+        if (flight.camMode === 0) {
+          // 機尾追尾視角
+          const offset = new THREE.Vector3(0, 5.5 * cfg.scale, 22 * cfg.scale).applyEuler(new THREE.Euler(0, flight.yaw, 0));
+          camera.position.lerp(flight.pos.clone().add(offset), 0.15);
+          camera.lookAt(flight.pos.clone().add(new THREE.Vector3(0, 1.5, 0)));
+        } else if (flight.camMode === 1) {
+          // 駕駛艙第一人稱視角
+          const cockpitOffset = new THREE.Vector3(0, 1.3 * cfg.scale, -3.2 * cfg.scale).applyEuler(euler);
+          camera.position.copy(flight.pos).add(cockpitOffset);
+          camera.rotation.copy(euler);
+        } else {
+          // 遠距廣角
+          const farOffset = new THREE.Vector3(28 * cfg.scale, 14 * cfg.scale, 42 * cfg.scale).applyEuler(new THREE.Euler(0, flight.yaw, 0));
+          camera.position.lerp(flight.pos.clone().add(farOffset), 0.1);
+          camera.lookAt(flight.pos);
+        }
+
+        // 更新所有 HUD 儀表讀數
+        const altFeet = Math.max(0, Math.round((flight.pos.y - groundLevel) * 3.28084));
+        const hdg = ((Math.round((-flight.yaw * 180) / Math.PI) % 360) + 360) % 360;
+        document.getElementById('hud-spd').textContent = Math.round(flight.speed);
+        document.getElementById('hud-alt').textContent = altFeet;
+        document.getElementById('inst-thr').textContent = `${Math.round(flight.throttle)}%`;
+        document.getElementById('inst-hdg').textContent = `${String(hdg).padStart(3, '0')}°`;
+        document.getElementById('inst-vs').textContent = `${Math.round(verticalSpeed * 196.85)} fpm`;
+        document.getElementById('inst-flaps').textContent = `${flight.flaps}°`;
+        document.getElementById('inst-gear').textContent = flight.gearDown ? 'DOWN' : 'UP';
+        document.getElementById('inst-gear').style.color = flight.gearDown ? '#10b981' : '#f59e0b';
       }
 
-      state.x += state.speed * 0.05;
-      document.getElementById('hud-spd').textContent = Math.round(state.speed);
-      document.getElementById('hud-alt').textContent = Math.round(state.alt);
-      document.getElementById('hud-pitch').textContent = state.pitch.toFixed(1);
-      document.getElementById('hud-thr').textContent = Math.round(state.throttle);
-      document.getElementById('hud-gear').textContent = state.gearDown ? 'DOWN' : 'UP';
+      renderer.render(scene, camera);
     }
 
-    function draw() {
-      const W = canvas.width, H = canvas.height;
-      const spec = AIRCRAFT_SPECS[document.getElementById('aircraft-select').value];
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
 
-      const skyDarkness = Math.min(0.85, state.alt / 25000);
-      const grad = ctx.createLinearGradient(0, 0, 0, H);
-      grad.addColorStop(0, `rgba(14, 116, 144, ${1 - skyDarkness})`);
-      grad.addColorStop(1, '#0f172a');
-      ctx.fillStyle = grad;
-      ctx.fillRect(0, 0, W, H);
-
-      ctx.fillStyle = 'rgba(255,255,255,0.14)';
-      for (let i = 0; i < 8; i++) {
-        const cx = ((i * 320 - state.x * 0.4) % (W + 200) + (W + 200)) % (W + 200) - 100;
-        const cy = 80 + (i % 4) * 75 + state.alt * 0.08;
-        if (cy < H - 60) {
-          ctx.beginPath();
-          ctx.ellipse(cx, cy, 70, 22, 0, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-
-      const groundY = H - 90 + Math.min(H, state.alt * 0.25);
-      if (groundY < H) {
-        ctx.fillStyle = '#064e3b';
-        ctx.fillRect(0, groundY, W, H - groundY);
-        ctx.fillStyle = '#334155';
-        ctx.fillRect(0, groundY, W, 24);
-        ctx.fillStyle = '#f8fafc';
-        for (let rx = -((state.x * 2) % 80); rx < W; rx += 80) ctx.fillRect(rx, groundY + 10, 40, 4);
-      }
-
-      const planeX = 220;
-      const planeY = Math.min(H - 105, Math.max(110, H - 105 - state.alt * 0.04));
-      ctx.save();
-      ctx.translate(planeX, planeY);
-      ctx.rotate((-state.pitch * Math.PI) / 180);
-
-      ctx.fillStyle = spec.color;
-      ctx.beginPath();
-      ctx.moveTo(45, 0); ctx.lineTo(-35, -10); ctx.lineTo(-45, -22); ctx.lineTo(-48, 4); ctx.lineTo(35, 8);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.fillStyle = '#0284c7';
-      ctx.fillRect(-10, 0, 26, 6);
-
-      if (state.gearDown) {
-        ctx.strokeStyle = '#cbd5e1';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(20, 6); ctx.lineTo(20, 16);
-        ctx.moveTo(-18, 6); ctx.lineTo(-18, 16);
-        ctx.stroke();
-      }
-      ctx.restore();
-
-      ctx.fillStyle = state.crashed ? '#ef4444' : '#38bdf8';
-      ctx.font = 'bold 16px sans-serif';
-      ctx.fillText(state.statusMsg, 24, 36);
-    }
-
-    function loop() { update(); draw(); requestAnimationFrame(loop); }
-    loop();
+    animate();
   </script>
 </body>
 </html>
