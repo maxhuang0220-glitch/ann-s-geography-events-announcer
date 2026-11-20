@@ -14,7 +14,7 @@
         <span class="globe-icon">🌐</span>
         <div>
           <h1 id="world-title">世界設定集</h1>
-          <small>World Wiki v6.0</small>
+          <small>World Wiki v6.1</small>
         </div>
       </div>
 
@@ -47,7 +47,6 @@
         <button class="nav-btn" data-view="events">📰 全球新聞與事件</button>
         <button class="nav-btn" data-view="stocks">📈 全球證券交易所</button>
         <button class="nav-btn" data-view="un">🏛️ 聯合國大會</button>
-        <button class="nav-btn" data-view="games">🎮 放鬆一下 (Game)</button>
         <button class="nav-btn" data-view="map">🗺️ 世界地圖與領土</button>
         <button class="nav-btn" data-view="countries">🏴 國家與專屬官網</button>
         <button class="nav-btn" data-view="transport">✈️ 跨國交通網</button>
@@ -63,11 +62,11 @@
 
     <!-- 右側主內容區 -->
     <main class="main-content">
-      <!-- 1. 世界總覽儀表板（已取消世界歷史時間軸） -->
+      <!-- 1. 世界總覽儀表板 -->
       <section id="view-dashboard" class="view active">
         <header class="view-header">
           <h2>🌍 世界總覽儀表板</h2>
-          <p id="world-subtitle">跨機同步標準時間 • 聯合國議事 • 全球即時股市 • 休閒娛樂中心</p>
+          <p id="world-subtitle">跨機同步標準時間 • 聯合國議事 • 全球即時股市</p>
         </header>
 
         <div class="breaking-news-banner" id="breaking-news-banner">
@@ -329,111 +328,7 @@
         </div>
       </section>
 
-      <!-- 5. 放鬆一下 (Game Center & 玩家遊戲開發軟件) -->
-      <section id="view-games" class="view">
-        <header class="view-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
-          <div>
-            <h2>🎮 放鬆一下 (World Game Center)</h2>
-            <p>官方經典桌遊與街機（支援單人 AI 機器人 & 雲端多人連線） • 玩家遊戲開發軟件</p>
-          </div>
-          <div style="display:flex; gap:8px; flex-wrap:wrap;">
-            <button class="btn-primary" onclick="selectGameTab('lobby')">🕹️ 遊戲大廳</button>
-            <button class="btn-secondary" onclick="selectGameTab('studio')">🛠️ 玩家遊戲開發軟件</button>
-          </div>
-        </header>
-
-        <!-- 遊戲大廳與遊玩舞台 -->
-        <div id="game-tab-lobby">
-          <div class="stats-grid" style="margin-bottom:18px;">
-            <div class="stat-card" style="cursor:pointer; border-color:#ef4444;" onclick="launchOfficialGame('uno')">
-              <h3>🃏 官方桌遊</h3>
-              <p class="stat-value" style="font-size:1.3rem;">UNO 優諾牌</p>
-              <small style="color:var(--text-muted);">🤖 AI 機器人 / 🌐 雲端多人房</small>
-            </div>
-            <div class="stat-card" style="cursor:pointer; border-color:#f59e0b;" onclick="launchOfficialGame('rummikub')">
-              <h3>🔢 官方益智</h3>
-              <p class="stat-value" style="font-size:1.3rem;">拉密 (Rummikub)</p>
-              <small style="color:var(--text-muted);">🤖 AI 對決 / 🌐 破冰順子刻子</small>
-            </div>
-            <div class="stat-card" style="cursor:pointer; border-color:#10b981;" onclick="launchOfficialGame('snake')">
-              <h3>🐍 官方街機</h3>
-              <p class="stat-value" style="font-size:1.3rem;">經典貪吃蛇</p>
-              <small style="color:var(--text-muted);">🤖 AI 對戰蛇 / 👥 同機雙人 / 🏆 排行榜</small>
-            </div>
-            <div class="stat-card" style="cursor:pointer; border-color:#38bdf8;" onclick="openFlightSimulator()">
-              <h3>✈️ 獨立大作模組</h3>
-              <p class="stat-value" style="font-size:1.3rem;">Flight Simulator</p>
-              <small style="color:var(--accent);">📂 獨立資料夾 (flight-sim/) 啟動 ↗</small>
-            </div>
-          </div>
-
-          <div class="panel" id="game-stage-panel" style="margin-bottom:20px;">
-            <div class="panel-header-row" style="flex-wrap:wrap; gap:10px;">
-              <h3 id="active-game-title">🎲 請選擇上方一款官方遊戲或下方玩家自製遊戲開始遊玩！</h3>
-              <div id="game-mode-controls" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;"></div>
-            </div>
-            <div id="active-game-arena" style="min-height:280px; margin-top:12px;">
-              <p class="hint">點擊上方的 <strong>UNO</strong>、<strong>拉密</strong>、<strong>貪吃蛇</strong>，或開啟獨立視窗遊玩 <strong>Flight Simulator</strong>！</p>
-            </div>
-          </div>
-
-          <div class="panel">
-            <div class="panel-header-row">
-              <h3>🌟 玩家開發者創意工坊（全服雲端共享遊戲）</h3>
-              <button class="btn-tiny" onclick="selectGameTab('studio')">➕ 我要開發新遊戲</button>
-            </div>
-            <div id="community-games-grid" class="countries-grid" style="margin-top:12px;"></div>
-          </div>
-        </div>
-
-        <!-- 玩家遊戲開發軟件 (Game Studio IDE) -->
-        <div id="game-tab-studio" class="hidden">
-          <div class="dashboard-split">
-            <div class="panel">
-              <div class="panel-header-row">
-                <h3>🛠️ World Game Studio — 玩家遊戲開發軟件</h3>
-                <select id="studio-template-select" class="filter-select" onchange="loadStudioTemplate()">
-                  <option value="clicker">📦 範本 1：星際點擊挖礦 (HTML+JS)</option>
-                  <option value="shooter">🚀 範本 2：太空隕石防禦戰 (Canvas)</option>
-                  <option value="guess">🔢 範本 3：終極密碼猜數字</option>
-                </select>
-              </div>
-              <form id="publish-game-form" class="builder-form" style="max-width:100%; margin-top:10px;">
-                <div class="form-grid" style="grid-template-columns: 2fr 1fr;">
-                  <div class="form-group">
-                    <label>遊戲名稱 *</label>
-                    <input type="text" id="dev-game-title" placeholder="例如：星際礦工大亨" required />
-                  </div>
-                  <div class="form-group">
-                    <label>遊戲圖示 Emoji</label>
-                    <input type="text" id="dev-game-icon" value="🕹️" maxlength="4" />
-                  </div>
-                </div>
-                <div class="form-group" style="margin-top:8px;">
-                  <label>遊戲簡介與玩法說明 *</label>
-                  <input type="text" id="dev-game-desc" placeholder="簡單介紹你的遊戲玩法..." required />
-                </div>
-                <div class="form-group" style="margin-top:8px;">
-                  <label>遊戲程式碼 (支援完整 HTML / CSS / JavaScript / Canvas)</label>
-                  <textarea id="dev-game-code" rows="13" style="font-family:monospace; font-size:0.82rem; background:#090d16; color:#38bdf8;" required></textarea>
-                </div>
-                <div style="display:flex; gap:10px; margin-top:12px;">
-                  <button type="button" class="btn-secondary" onclick="previewStudioGame()">▶️ 即時測試執行</button>
-                  <button type="submit" class="btn-primary">☁️ 發佈上架至全服遊戲大廳</button>
-                </div>
-              </form>
-            </div>
-
-            <div class="panel">
-              <h3>🖥️ 即時沙盒預覽視窗</h3>
-              <p class="hint" style="margin-bottom:10px;">點擊「即時測試執行」可在此處測試你的遊戲程式。</p>
-              <iframe id="studio-preview-frame" style="width:100%; height:440px; border:1px solid var(--border); border-radius:10px; background:#0f172a;"></iframe>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- 6. 世界地圖與領土繪製 -->
+      <!-- 5. 世界地圖與領土繪製 -->
       <section id="view-map" class="view">
         <header class="view-header">
           <h2>🗺️ 世界地圖與領土編輯器</h2>
@@ -470,7 +365,7 @@
         </div>
       </section>
 
-      <!-- 7. 國家列表與專屬官網 -->
+      <!-- 6. 國家列表與專屬官網 -->
       <section id="view-countries" class="view">
         <header class="view-header">
           <h2>🏴 國家與專屬官方網站</h2>
@@ -479,7 +374,7 @@
         <div id="countries-grid" class="countries-grid"></div>
       </section>
 
-      <!-- 8. 跨國交通 -->
+      <!-- 7. 跨國交通 -->
       <section id="view-transport" class="view">
         <header class="view-header">
           <h2>✈️ 全球跨國交通與航線網</h2>
@@ -514,7 +409,7 @@
         </div>
       </section>
 
-      <!-- 9. 外交 -->
+      <!-- 8. 外交 -->
       <section id="view-diplomacy" class="view">
         <header class="view-header"><h2>🤝 國際外交與條約組織</h2></header>
         <div class="dashboard-split">
@@ -547,7 +442,7 @@
         </div>
       </section>
 
-      <!-- 10. 創建/編輯國家與專屬官網設計器 -->
+      <!-- 9. 創建/編輯國家與專屬官網設計器 -->
       <section id="view-builder" class="view">
         <header class="view-header" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
           <div>
@@ -619,7 +514,7 @@
         </form>
       </section>
 
-      <!-- 11. 帳號與系統管理員後台 -->
+      <!-- 10. 帳號與系統管理員後台 -->
       <section id="view-accounts" class="view">
         <header class="view-header">
           <h2>🔐 玩家帳號與世界管理員後台</h2>
